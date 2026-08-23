@@ -1,0 +1,42 @@
+# ═══════════════════════════════════════════════════════════
+# Haber Kölesi — Python Bağımlılıkları
+# ═══════════════════════════════════════════════════════════
+
+# Asenkron çalışma
+aiohttp>=3.9.0
+
+# Zamanlama
+APScheduler>=3.10.0
+
+# Veritabanı (PostgreSQL async)
+asyncpg>=0.29.0
+
+# X (Twitter) işlemleri
+twikit>=2.0.0
+
+# Threads işlemleri
+threads-api>=1.0.0
+
+# Çeviri
+deep-translator>=1.11.0
+
+# RSS parsing
+feedparser>=6.0.0
+
+# İçerik çekme
+trafilatura>=1.8.0
+
+# AI — Gemini
+google-generativeai>=0.8.0
+
+# Hata toleransı / retry
+tenacity>=8.2.0
+
+# Fake User-Agent
+fake-useragent>=1.5.0
+
+# Ortam değişkenleri
+python-dotenv>=1.0.0
+
+# Zaman dilimi
+pytz>=2024.1
