@@ -1,4 +1,5 @@
 import asyncio
+import re
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
@@ -43,7 +44,8 @@ def make_panel():
 
 def login(client):
     client.post("/login", data={"password": "1234"})
-    return client.get("/").json()["csrf_token"]
+    html = client.get("/").text
+    return re.search(r'name="csrf_token" value="([^"]+)"', html).group(1)
 
 
 def test_state_changing_route_rejects_missing_csrf():
@@ -79,4 +81,30 @@ def test_news_detail_requires_login_and_returns_record():
         authenticated = client.get(f"/news/{news_id}")
 
     assert anonymous.status_code == 303
-    assert authenticated.json()["title"] == "Panel news"
+    assert "Panel news" in authenticated.text
+
+
+def test_dashboard_shows_queue_filters_and_schedule():
+    client, _, _ = make_panel()
+    with client:
+        login(client)
+        html = client.get("/").text
+
+    assert "Gemini kuyruğu" in html
+    assert "Sonraki istek" in html
+    assert 'name="category"' in html
+    assert "10:00" in html
+    assert "20:00" in html
+
+
+def test_detail_shows_original_and_generated_text():
+    client, _, news_id = make_panel()
+    with client:
+        login(client)
+        html = client.get(f"/news/{news_id}").text
+
+    assert "Orijinal haber" in html
+    assert "Devosuit metni" in html
+    assert "Generated text" in html
+    assert "Görsel sonraki aşamada" in html
+    assert "X yayını kapalı" in html

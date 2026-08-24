@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Devosuit Haber Paneli{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', path='/app.css') }}">
+</head>
+<body>
+  <a class="skip-link" href="#main-content">İçeriğe geç</a>
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="Devosuit Haber Paneli ana sayfa">
+      <span class="brand-mark"><img src="{{ url_for('assets', path='/logotek.svg') }}" alt=""></span>
+      <span><strong>Devosuit</strong><small>Haber Paneli</small></span>
+    </a>
+    {% if csrf_token %}
+    <form action="/logout" method="post">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button class="button button-quiet" type="submit">Çıkış yap</button>
+    </form>
+    {% endif %}
+  </header>
+  {% if unsafe_password %}
+  <div class="warning" role="alert">Geliştirme parolası kullanılıyor. Canlıya çıkmadan önce değiştir.</div>
+  {% endif %}
+  <main id="main-content" class="shell">
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>
+

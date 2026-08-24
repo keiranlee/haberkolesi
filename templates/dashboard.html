@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="page-heading">
+  <div>
+    <p class="eyebrow">Editör çalışma alanı</p>
+    <h1>Haber akışı</h1>
+    <p class="muted">Haberleri çek, puanlama kuyruğunu izle ve yalnızca iyi adaylar için metin hazırla.</p>
+  </div>
+  <form action="/collect" method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button class="button button-primary" type="submit">Haberleri çek</button>
+  </form>
+</section>
+
+<section class="metrics" aria-label="Sistem özeti">
+  <article class="metric-card">
+    <span>Gemini kuyruğu</span>
+    <strong>{{ queue_count }}</strong>
+    <small>Bekleyen ve tamamlanan işler</small>
+  </article>
+  <article class="metric-card">
+    <span>İstek aralığı</span>
+    <strong>15 sn</strong>
+    <small>Dakikada en fazla 4 istek</small>
+  </article>
+  <article class="metric-card">
+    <span>Sonraki istek</span>
+    <strong>Kuyrukta</strong>
+    <small>Worker güvenli sırayla işler</small>
+  </article>
+</section>
+
+<section class="panel schedule" aria-labelledby="schedule-title">
+  <div class="section-heading">
+    <div><p class="eyebrow">Yayın önizlemesi</p><h2 id="schedule-title">Günlük kategori sırası</h2></div>
+    <span class="badge badge-off">X yayını kapalı</span>
+  </div>
+  <ol class="schedule-list">
+    <li><time>10:00</time><span>Girisim</span></li>
+    <li><time>12:00</time><span>AI</span></li>
+    <li><time>14:00</time><span>Teknoloji</span></li>
+    <li><time>16:00</time><span>AI</span></li>
+    <li><time>18:00</time><span>Yazilim</span></li>
+    <li><time>20:00</time><span>Girisim</span></li>
+  </ol>
+</section>
+
+<section class="panel" aria-labelledby="news-title">
+  <div class="section-heading">
+    <div><p class="eyebrow">Aday havuzu</p><h2 id="news-title">Çekilen haberler</h2></div>
+  </div>
+  <form class="filters" method="get" action="/">
+    <label>Kategori
+      <select name="category">
+        <option value="">Tümü</option>
+        {% for category in categories %}
+        <option value="{{ category.value }}" {% if selected_category == category %}selected{% endif %}>{{ category.value }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Durum
+      <select name="state">
+        <option value="">Tümü</option>
+        {% for state in states %}
+        <option value="{{ state.value }}" {% if selected_state == state %}selected{% endif %}>{{ state.value }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <button class="button button-secondary" type="submit">Filtrele</button>
+  </form>
+
+  {% if records %}
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Haber</th><th>Kategori</th><th>Puan</th><th>Durum</th><th></th></tr></thead>
+      <tbody>
+      {% for record in records %}
+        <tr>
+          <td><strong>{{ record.raw.title }}</strong><small>{{ record.raw.source }}</small></td>
+          <td>{{ (record.ai_category or record.raw.source_category).value }}</td>
+          <td>{% if record.score is not none %}<span class="score">{{ "%.1f"|format(record.score) }}</span>{% else %}—{% endif %}</td>
+          <td><span class="badge badge-{{ record.state.value }}">{{ record.state.value }}</span></td>
+          <td><a class="text-link" href="/news/{{ record.id }}">İncele</a></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="empty-state"><h3>Henüz haber yok</h3><p>İlk RSS taramasını başlatmak için “Haberleri çek” düğmesini kullan.</p></div>
+  {% endif %}
+</section>
+{% endblock %}
+

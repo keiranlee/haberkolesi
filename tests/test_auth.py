@@ -1,4 +1,5 @@
 from types import SimpleNamespace
+import re
 
 from fastapi.testclient import TestClient
 
@@ -18,6 +19,10 @@ def make_client():
         cookie_secure=False,
     )
     return TestClient(create_app(settings, MemoryRepository(), StubPipeline()))
+
+
+def csrf_from(html):
+    return re.search(r'name="csrf_token" value="([^"]+)"', html).group(1)
 
 
 def test_dashboard_redirects_anonymous_user():
@@ -45,7 +50,7 @@ def test_login_accepts_only_configured_password():
 def test_logout_removes_admin_session():
     with make_client() as client:
         client.post("/login", data={"password": "1234"})
-        csrf_token = client.get("/").json()["csrf_token"]
+        csrf_token = csrf_from(client.get("/").text)
         response = client.post(
             "/logout",
             data={"csrf_token": csrf_token},
@@ -55,4 +60,3 @@ def test_logout_removes_admin_session():
 
     assert response.status_code == 303
     assert dashboard.status_code == 303
-

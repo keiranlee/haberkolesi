@@ -1,17 +1,26 @@
 """FastAPI application factory for the Devosuit news review panel."""
 
+from pathlib import Path
 from typing import Optional
 
 from fastapi import BackgroundTasks, FastAPI, Form, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
 
 from auth import ensure_csrf_token, require_admin, verify_csrf, verify_password
 from domain import Category, NewsState
 
 
+BASE_DIR = Path(__file__).resolve().parent
+
+
 def create_app(settings, repository, pipeline) -> FastAPI:
     app = FastAPI(title="Devosuit Haber Paneli")
+    templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
+    app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
+    app.mount("/assets", StaticFiles(directory=str(BASE_DIR / "assets")), name="assets")
     app.add_middleware(
         SessionMiddleware,
         secret_key=settings.session_secret,
@@ -29,13 +38,22 @@ def create_app(settings, repository, pipeline) -> FastAPI:
         return {"status": "ok"}
 
     @app.get("/login", response_class=HTMLResponse)
-    async def login_page():
-        return "<form method='post'><input name='password' type='password'></form>"
+    async def login_page(request: Request):
+        return templates.TemplateResponse(
+            request=request,
+            name="login.html",
+            context={"error": None},
+        )
 
     @app.post("/login")
     async def login(request: Request, password: str = Form(...)):
         if not verify_password(password, settings.admin_password):
-            return HTMLResponse("Geçersiz parola", status_code=401)
+            return templates.TemplateResponse(
+                request=request,
+                name="login.html",
+                context={"error": "Geçersiz parola"},
+                status_code=401,
+            )
         request.session.clear()
         request.session["is_admin"] = True
         ensure_csrf_token(request)
@@ -56,22 +74,20 @@ def create_app(settings, repository, pipeline) -> FastAPI:
     ):
         require_admin(request)
         records = await repository.list_news(category=category, state=state)
-        return JSONResponse(
-            {
+        queue_count = await repository.count_jobs()
+        return templates.TemplateResponse(
+            request=request,
+            name="dashboard.html",
+            context={
                 "csrf_token": ensure_csrf_token(request),
-                "news": [
-                    {
-                        "id": record.id,
-                        "title": record.raw.title,
-                        "category": (
-                            record.ai_category or record.raw.source_category
-                        ).value,
-                        "score": record.score,
-                        "state": record.state.value,
-                    }
-                    for record in records
-                ],
-            }
+                "records": records,
+                "categories": list(Category),
+                "states": list(NewsState),
+                "selected_category": category,
+                "selected_state": state,
+                "queue_count": queue_count,
+                "unsafe_password": settings.admin_password == "1234",
+            },
         )
 
     @app.post("/collect")
@@ -92,23 +108,14 @@ def create_app(settings, repository, pipeline) -> FastAPI:
             record = await repository.get_news(news_id)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="News not found") from exc
-        return JSONResponse(
-            {
+        return templates.TemplateResponse(
+            request=request,
+            name="news_detail.html",
+            context={
                 "csrf_token": ensure_csrf_token(request),
-                "id": record.id,
-                "title": record.raw.title,
-                "source_url": record.raw.url,
-                "content": record.raw.content,
-                "category": (
-                    record.ai_category or record.raw.source_category
-                ).value,
-                "score": record.score,
-                "reason": record.score_reason,
-                "key_facts": record.key_facts or [],
-                "risk_flags": record.risk_flags or [],
-                "draft_text": record.draft_text,
-                "state": record.state.value,
-            }
+                "record": record,
+                "unsafe_password": settings.admin_password == "1234",
+            },
         )
 
     @app.post("/news/{news_id}/prepare")

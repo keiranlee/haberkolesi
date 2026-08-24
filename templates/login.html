@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Giriş · Devosuit Haber Paneli{% endblock %}
+{% block content %}
+<section class="login-card" aria-labelledby="login-title">
+  <p class="eyebrow">Editör erişimi</p>
+  <h1 id="login-title">Haber paneline giriş</h1>
+  <p class="muted">Çekilen haberleri, Gemini puanlarını ve hazırlanan metinleri incele.</p>
+  <form method="post" action="/login" class="stack">
+    <label for="password">Parola</label>
+    <input id="password" name="password" type="password" autocomplete="current-password" required autofocus>
+    {% if error %}<p class="field-error" role="alert">{{ error }}</p>{% endif %}
+    <button class="button button-primary" type="submit">Giriş yap</button>
+  </form>
+</section>
+{% endblock %}
+
