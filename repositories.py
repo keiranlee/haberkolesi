@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import threading
 from copy import deepcopy
 from datetime import datetime, timezone
 from typing import Dict, List, Optional
@@ -27,7 +28,7 @@ class MemoryRepository:
         self._news: Dict[int, NewsRecord] = {}
         self._news_by_url: Dict[str, int] = {}
         self._jobs: Dict[int, AiJob] = {}
-        self._lock = asyncio.Lock()
+        self._lock = threading.RLock()
         self._next_news_id = 1
         self._next_job_id = 1
         self._next_batch_id = 1
@@ -57,7 +58,7 @@ class MemoryRepository:
 
     async def insert_news(self, batch_id: int, item: RawNews) -> NewsRecord:
         normalized_url = normalize_url(item.url)
-        async with self._lock:
+        with self._lock:
             existing_id = self._news_by_url.get(normalized_url)
             if existing_id is not None:
                 return deepcopy(self._news[existing_id])
@@ -100,7 +101,7 @@ class MemoryRepository:
         return deepcopy(records)
 
     async def save_score(self, news_id: int, result: ScoreResult) -> None:
-        async with self._lock:
+        with self._lock:
             record = self._news[news_id]
             record.score = result.score
             record.ai_category = result.category
@@ -117,14 +118,14 @@ class MemoryRepository:
         used_facts: List[str],
     ) -> None:
         del used_facts
-        async with self._lock:
+        with self._lock:
             record = self._news[news_id]
             record.draft_text = text
             record.state = NewsState.DRAFTED
             self.generation_versions.setdefault(news_id, []).append(text)
 
     async def approve(self, news_id: int, edited_text: Optional[str] = None) -> None:
-        async with self._lock:
+        with self._lock:
             record = self._news[news_id]
             if edited_text is not None and edited_text.strip():
                 record.draft_text = edited_text.strip()
@@ -137,14 +138,14 @@ class MemoryRepository:
             )
 
     async def reject(self, news_id: int) -> None:
-        async with self._lock:
+        with self._lock:
             self._news[news_id].state = NewsState.REJECTED
             self.editor_actions.append(
                 EditorAction(news_id, "reject", datetime.now(timezone.utc))
             )
 
     async def enqueue_job(self, news_id: int, job_type: AiJobType) -> AiJob:
-        async with self._lock:
+        with self._lock:
             for job in self._jobs.values():
                 if (
                     job.news_id == news_id
@@ -170,7 +171,7 @@ class MemoryRepository:
         now: Optional[datetime] = None,
     ) -> Optional[AiJob]:
         current_time = now or datetime.now(timezone.utc)
-        async with self._lock:
+        with self._lock:
             for job in sorted(self._jobs.values(), key=lambda candidate: candidate.id):
                 ready = job.state is AiJobState.PENDING or (
                     job.state is AiJobState.RETRY
@@ -186,7 +187,7 @@ class MemoryRepository:
         return None
 
     async def complete_job(self, job_id: int) -> None:
-        async with self._lock:
+        with self._lock:
             self._jobs[job_id].state = AiJobState.COMPLETED
 
     async def retry_job(
@@ -195,7 +196,7 @@ class MemoryRepository:
         next_attempt_at: datetime,
         error: str,
     ) -> None:
-        async with self._lock:
+        with self._lock:
             job = self._jobs[job_id]
             job.state = AiJobState.RETRY
             job.next_attempt_at = next_attempt_at
@@ -203,7 +204,7 @@ class MemoryRepository:
             job.worker_id = None
 
     async def fail_job(self, job_id: int, error: str) -> None:
-        async with self._lock:
+        with self._lock:
             job = self._jobs[job_id]
             job.state = AiJobState.FAILED
             job.last_error = error

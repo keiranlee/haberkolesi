@@ -27,9 +27,11 @@ class NewsPipeline:
         self.now = now
         self.max_age = max_age
         self.per_category = per_category
-        self._collection_lock = asyncio.Lock()
+        self._collection_lock = None
 
     async def start_collection(self) -> int:
+        if self._collection_lock is None:
+            self._collection_lock = asyncio.Lock()
         if self._collection_lock.locked():
             raise CollectionInProgress("A collection is already running")
         async with self._collection_lock:
@@ -91,4 +93,3 @@ class NewsPipeline:
         record = await self.repository.get_news(news_id)
         await self.repository.enqueue_job(record.id, AiJobType.GENERATE)
         return record
-
