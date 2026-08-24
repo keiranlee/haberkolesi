@@ -1,67 +1,102 @@
 {% extends "base.html" %}
-{% block title %}{{ record.raw.title }} · Devosuit{% endblock %}
+{% block title %}{{ record.raw.title }} · Devosuit Newsroom{% endblock %}
 {% block content %}
-<a class="back-link" href="/">Haber akışına dön</a>
-<section class="detail-heading">
-  <div>
-    <p class="eyebrow">{{ (record.ai_category or record.raw.source_category).value }} · {{ record.raw.source }}</p>
+<nav class="breadcrumb" aria-label="İçerik yolu">
+  <a href="/">Haber havuzu</a><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6 1.41-1.41L17.83 12l-7.42 7.41L9 18Z"/></svg><span>Haber #{{ record.id }}</span>
+</nav>
+
+<header class="detail-hero">
+  <div class="detail-title">
+    <div class="detail-tags">
+      <span class="category-label"><span class="category-dot dot-{{ (record.ai_category or record.raw.source_category).value|lower }}"></span>{{ (record.ai_category or record.raw.source_category).value }}</span>
+      <span class="state-badge state-{{ record.state.value }}"><span></span>{{ state_labels[record.state] }}</span>
+    </div>
     <h1>{{ record.raw.title }}</h1>
-    <a class="text-link" href="{{ record.raw.url }}" target="_blank" rel="noopener noreferrer">Kaynağı yeni sekmede aç</a>
+    <div class="source-line"><span>{{ record.raw.source }}</span>{% if record.raw.published_at %}<span>{{ record.raw.published_at|istanbul_datetime }}</span>{% endif %}<a href="{{ record.raw.url }}" target="_blank" rel="noopener noreferrer">Kaynağı aç<svg aria-hidden="true" viewBox="0 0 24 24"><path d="M14 3v2h3.59l-9.3 9.29 1.42 1.42L19 6.41V10h2V3h-7ZM5 5h5V3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-5h-2v5H5V5Z"/></svg></a></div>
   </div>
-  <div class="score-card">
-    <span>Gemini puanı</span>
+  <div class="hero-score" aria-label="Gemini puanı">
+    <span>Gemini skoru</span>
     <strong>{% if record.score is not none %}{{ "%.1f"|format(record.score) }}{% else %}—{% endif %}</strong>
     <small>/ 10</small>
   </div>
-</section>
+</header>
 
-<div class="detail-grid">
-  <section class="panel" aria-labelledby="original-title">
-    <p class="eyebrow">Kaynak</p><h2 id="original-title">Orijinal haber</h2>
-    <div class="article-copy">{{ record.raw.content }}</div>
-  </section>
-  <aside class="stack">
-    <section class="panel">
-      <p class="eyebrow">Editör değerlendirmesi</p><h2>Puanlama gerekçesi</h2>
-      <p>{{ record.score_reason or "Puanlama tamamlanmadı." }}</p>
-      {% if record.key_facts %}<h3>Temel gerçekler</h3><ul>{% for fact in record.key_facts %}<li>{{ fact }}</li>{% endfor %}</ul>{% endif %}
-      {% if record.risk_flags %}<h3>Risk işaretleri</h3><ul class="risk-list">{% for risk in record.risk_flags %}<li>{{ risk }}</li>{% endfor %}</ul>{% endif %}
+<div class="editorial-layout">
+  <article class="surface-card article-panel" aria-labelledby="original-title">
+    <header class="card-header article-header">
+      <div><p class="eyebrow">Kaynak içerik</p><h2 id="original-title">Orijinal haber</h2></div>
+      <span class="read-badge">Okuma modu</span>
+    </header>
+    <div class="article-copy" tabindex="0" aria-label="Orijinal haber metni">{{ record.raw.content }}</div>
+  </article>
+
+  <aside class="intelligence-rail" aria-labelledby="intelligence-title">
+    <section class="surface-card intelligence-card">
+      <header class="card-header"><div><p class="eyebrow">Gemini analizi</p><h2 id="intelligence-title">İçerik istihbaratı</h2></div><span class="spark-icon"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m12 2 1.5 5.5L19 9l-5.5 1.5L12 16l-1.5-5.5L5 9l5.5-1.5L12 2Zm7 12 .8 3.2L23 18l-3.2.8L19 22l-.8-3.2L15 18l3.2-.8L19 14Z"/></svg></span></header>
+      <div class="analysis-score-row">
+        <div class="score-ring" style="--score: {{ (record.score or 0) * 10 }}"><span>{% if record.score is not none %}{{ "%.1f"|format(record.score) }}{% else %}—{% endif %}</span></div>
+        <div><strong>{% if record.is_publishable %}Yayınlanabilir aday{% elif record.score is none %}Analiz bekleniyor{% else %}Editör incelemesi gerekli{% endif %}</strong><small>{{ record.score_reason or "Gemini puanlama işi henüz tamamlanmadı." }}</small></div>
+      </div>
+      {% if record.key_facts %}
+      <div class="insight-block"><h3>Temel gerçekler</h3><ul class="fact-list">{% for fact in record.key_facts %}<li><span>✓</span>{{ fact }}</li>{% endfor %}</ul></div>
+      {% endif %}
+      <div class="insight-block"><h3>Risk kontrolü</h3>{% if record.risk_flags %}<ul class="risk-list">{% for risk in record.risk_flags %}<li><span>!</span>{{ risk }}</li>{% endfor %}</ul>{% else %}<p class="safe-note"><span>✓</span>Risk işareti bulunamadı.</p>{% endif %}</div>
     </section>
-    <section class="panel placeholder-card">
-      <span class="badge badge-off">Sonraki aşama</span>
+
+    <section class="surface-card visual-placeholder">
+      <div class="visual-orbit"><img src="{{ url_for('assets', path='/logotek.svg') }}" alt=""></div>
+      <span class="status-badge status-paused">Sonraki faz</span>
       <h2>Görsel sonraki aşamada</h2>
-      <p>#201F4B arka plan ve turuncu Devosuit kimliği burada önizlenecek.</p>
+      <p>#201F4B zemin ve turuncu Devosuit kimliğiyle gönderi görseli burada üretilecek.</p>
     </section>
   </aside>
 </div>
 
-<section class="panel draft-panel" aria-labelledby="draft-title">
-  <div class="section-heading"><div><p class="eyebrow">Yayın taslağı</p><h2 id="draft-title">Devosuit metni</h2></div><span class="badge badge-off">X yayını kapalı</span></div>
-  {% if record.draft_text %}
-  <form action="/news/{{ record.id }}/approve" method="post" class="stack">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    <label for="edited_text">Gönderi metni</label>
-    <textarea id="edited_text" name="edited_text" rows="6" maxlength="240">{{ record.draft_text }}</textarea>
-    <div class="action-row">
-      <button class="button button-primary" type="submit">Metni onayla</button>
-    </div>
-  </form>
-  <div class="secondary-actions">
-    <form action="/news/{{ record.id }}/reject" method="post">
+<section class="surface-card composer-card" aria-labelledby="draft-title">
+  <header class="composer-header">
+    <div><p class="eyebrow">Editör çalışma alanı</p><h2 id="draft-title">Yayın taslağı</h2></div>
+    <div class="publish-state"><span class="status-dot is-muted"></span>X yayını kapalı</div>
+  </header>
+  {% if record.state.value == "drafted" and record.draft_text %}
+  <div class="composer-workspace" aria-label="Haber işlem adımları">
+    <form action="/news/{{ record.id }}/approve" method="post" class="composer-form">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <button class="button button-danger" type="submit">Reddet ve sıradakini hazırla</button>
+      <div class="composer-label"><label for="edited_text">Devosuit metni</label><span>En fazla 240 karakter</span></div>
+      <textarea id="edited_text" name="edited_text" rows="6" maxlength="240">{{ record.draft_text }}</textarea>
+      <button class="button button-primary" type="submit"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m9 16.17-3.59-3.58L4 14l5 5L20 8l-1.41-1.41L9 16.17Z"/></svg>Metni onayla</button>
     </form>
-    <form action="/news/{{ record.id }}/regenerate" method="post">
+    <div class="editor-actions">
+      <form action="/news/{{ record.id }}/regenerate" method="post">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button class="button button-secondary" type="submit" title="Yeni bir Gemini isteği kullanır"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 4V1L8 5l4 4V6a6 6 0 1 1-5.65 4H4.26A8 8 0 1 0 12 4Z"/></svg>Yeniden üret</button>
+      </form>
+      <form action="/news/{{ record.id }}/reject" method="post" onsubmit="return confirm('Bu taslağı reddedip sıradaki adaya geçmek istiyor musun?')">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button class="button button-danger-quiet" type="submit"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m7.76 14.83-1.41-1.42L9.76 10l-3.41-3.41 1.41-1.42L11.17 8.6l3.42-3.42L16 6.59 12.59 10 16 13.41 14.59 14.83l-3.42-3.42-3.41 3.42Z"/></svg>Reddet ve sıradakine geç</button>
+      </form>
+    </div>
+    <p class="action-helper">Yeniden üretmek 1 Gemini isteği kullanır. Reddetmek bu adayı kapatır ve sıradaki güvenli adayı hazırlar.</p>
+  </div>
+  {% elif record.draft_text %}
+  <div class="finalized-draft">
+    <span class="state-badge state-{{ record.state.value }}"><span></span>{% if record.state.value == "approved" %}Onaylanmış metin{% else %}Kapatılmış taslak{% endif %}</span>
+    <p>{{ record.draft_text }}</p>
+    <small>Bu kayıt tamamlandığı için düzenleme aksiyonları kapalıdır.</small>
+  </div>
+  {% elif record.state.value == "scored" %}
+  <div class="composer-empty">
+    <span><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M14.69 2.86 21.14 9.3 9.44 21H3v-6.44L14.69 2.86Zm0 2.83L5 15.39V19h3.61l9.7-9.7-3.62-3.61Z"/></svg></span>
+    <div><h3>Henüz Devosuit metni yok</h3><p>En yüksek puanlı güvenli adayı seçip yayın taslağını hazırlat.</p></div>
+    <form action="/news/{{ record.id }}/prepare" method="post">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <button class="button button-secondary" type="submit" title="Yeni bir Gemini isteği kullanır">Yeniden üret</button>
+      <button class="button button-primary" type="submit">Metin hazırla</button>
     </form>
   </div>
   {% else %}
-  <p class="muted">Bu haber için henüz Devosuit metni oluşturulmadı.</p>
-  <form action="/news/{{ record.id }}/prepare" method="post">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    <button class="button button-primary" type="submit">Metin hazırla</button>
-  </form>
+  <div class="composer-empty">
+    <span><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm1 17.93V18h-2v1.93A8 8 0 0 1 4.07 13H6v-2H4.07A8 8 0 0 1 11 4.07V6h2V4.07A8 8 0 0 1 19.93 11H18v2h1.93A8 8 0 0 1 13 19.93ZM12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8Z"/></svg></span>
+    <div><h3>Gemini değerlendirmesi bekleniyor</h3><p>Puanlama tamamlanınca metin hazırlanabilir.</p></div>
+  </div>
   {% endif %}
 </section>
 {% endblock %}

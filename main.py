@@ -76,6 +76,7 @@ async def build_app():
         pipeline,
         worker=worker,
         scheduler=scheduler,
+        rate_gate=gate,
         close_callback=close_resources,
     )
 

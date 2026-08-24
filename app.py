@@ -3,6 +3,7 @@
 from contextlib import asynccontextmanager
 import inspect
 from pathlib import Path
+from zoneinfo import ZoneInfo
 from typing import Awaitable, Callable, Optional
 
 from fastapi import BackgroundTasks, FastAPI, Form, HTTPException, Request
@@ -16,6 +17,21 @@ from domain import Category, NewsState
 
 
 BASE_DIR = Path(__file__).resolve().parent
+STATE_LABELS = {
+    NewsState.COLLECTED: "Puanlama bekliyor",
+    NewsState.SCORED: "Puanlandı",
+    NewsState.DRAFTED: "Taslak hazır",
+    NewsState.APPROVED: "Onaylandı",
+    NewsState.REJECTED: "Reddedildi",
+    NewsState.FAILED: "Hata",
+}
+ISTANBUL_TIMEZONE = ZoneInfo("Europe/Istanbul")
+
+
+def format_istanbul_datetime(value):
+    if value is None:
+        return ""
+    return value.astimezone(ISTANBUL_TIMEZONE).strftime("%d.%m.%Y · %H:%M")
 
 
 def create_app(
@@ -25,6 +41,7 @@ def create_app(
     *,
     worker=None,
     scheduler=None,
+    rate_gate=None,
     close_callback: Optional[Callable[[], Awaitable[None]]] = None,
 ) -> FastAPI:
     @asynccontextmanager
@@ -48,6 +65,7 @@ def create_app(
 
     app = FastAPI(title="Devosuit Haber Paneli", lifespan=lifespan)
     templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
+    templates.env.filters["istanbul_datetime"] = format_istanbul_datetime
     app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
     app.mount("/assets", StaticFiles(directory=str(BASE_DIR / "assets")), name="assets")
     app.add_middleware(
@@ -105,9 +123,21 @@ def create_app(
         state: Optional[NewsState] = None,
     ):
         require_admin(request)
-        records = await repository.list_news(category=category, state=state)
+        records = await repository.list_news(
+            category=category,
+            state=state,
+            limit=100,
+        )
         queue_count = await repository.count_jobs()
+        job_counts = await repository.job_counts()
         latest_batch = await repository.latest_batch()
+        stats = await repository.dashboard_stats()
+        stats["failed_jobs"] = job_counts["failed"]
+        rate_status = (
+            rate_gate.status()
+            if rate_gate is not None
+            else {"last_started_at": None, "next_allowed_at": None}
+        )
         return templates.TemplateResponse(
             request=request,
             name="dashboard.html",
@@ -119,7 +149,11 @@ def create_app(
                 "selected_category": category,
                 "selected_state": state,
                 "queue_count": queue_count,
+                "job_counts": job_counts,
+                "stats": stats,
+                "rate_status": rate_status,
                 "latest_batch": latest_batch,
+                "state_labels": STATE_LABELS,
                 "unsafe_password": settings.admin_password == "1234",
             },
         )
@@ -148,6 +182,7 @@ def create_app(
             context={
                 "csrf_token": ensure_csrf_token(request),
                 "record": record,
+                "state_labels": STATE_LABELS,
                 "unsafe_password": settings.admin_password == "1234",
             },
         )

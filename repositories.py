@@ -60,7 +60,13 @@ class MemoryRepository:
         if not self.batches:
             return None
         latest_id = max(self.batches)
-        return {"id": latest_id, **deepcopy(self.batches[latest_id])}
+        batch = deepcopy(self.batches[latest_id])
+        return {
+            "id": latest_id,
+            "state": batch["state"],
+            "found_count": batch["found"],
+            "error_count": batch["errors"],
+        }
 
     async def insert_news(self, batch_id: int, item: RawNews) -> NewsRecord:
         normalized_url = normalize_url(item.url)
@@ -96,6 +102,7 @@ class MemoryRepository:
         *,
         category: Optional[Category] = None,
         state: Optional[NewsState] = None,
+        limit: Optional[int] = None,
     ) -> List[NewsRecord]:
         records = list(self._news.values())
         if category is not None:
@@ -107,7 +114,19 @@ class MemoryRepository:
         if state is not None:
             records = [record for record in records if record.state is state]
         records.sort(key=lambda record: record.id, reverse=True)
+        if limit is not None:
+            records = records[:limit]
         return deepcopy(records)
+
+    async def dashboard_stats(self) -> Dict[str, int]:
+        records = list(self._news.values())
+        return {
+            "total_news": len(records),
+            "scored_news": sum(record.score is not None for record in records),
+            "ready_drafts": sum(
+                record.state is NewsState.DRAFTED for record in records
+            ),
+        }
 
     async def save_score(self, news_id: int, result: ScoreResult) -> None:
         with self._lock:
@@ -264,6 +283,12 @@ class MemoryRepository:
                 is category
             ]
         return len(jobs)
+
+    async def job_counts(self) -> Dict[str, int]:
+        counts = {state.value: 0 for state in AiJobState}
+        for job in self._jobs.values():
+            counts[job.state.value] += 1
+        return counts
 
     async def ranked_candidates(
         self,
@@ -436,6 +461,7 @@ class PostgresRepository:
         *,
         category: Optional[Category] = None,
         state: Optional[NewsState] = None,
+        limit: Optional[int] = None,
     ) -> List[NewsRecord]:
         conditions = []
         values = []
@@ -448,11 +474,28 @@ class PostgresRepository:
             values.append(state.value)
             conditions.append(f"state = ${len(values)}")
         where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+        limit_clause = ""
+        if limit is not None:
+            values.append(limit)
+            limit_clause = f"LIMIT ${len(values)}"
         async with self.pool.acquire() as connection:
             rows = await connection.fetch(
-                f"SELECT * FROM news_items {where} ORDER BY id DESC", *values
+                f"SELECT * FROM news_items {where} ORDER BY id DESC {limit_clause}",
+                *values,
             )
         return [self._news_from_row(row) for row in rows]
+
+    async def dashboard_stats(self) -> Dict[str, int]:
+        async with self.pool.acquire() as connection:
+            row = await connection.fetchrow(
+                """
+                SELECT COUNT(*) AS total_news,
+                       COUNT(*) FILTER (WHERE score IS NOT NULL) AS scored_news,
+                       COUNT(*) FILTER (WHERE state = 'drafted') AS ready_drafts
+                FROM news_items
+                """
+            )
+        return dict(row)
 
     async def save_score(self, news_id: int, result: ScoreResult) -> None:
         async with self.pool.acquire() as connection:
@@ -706,6 +749,16 @@ class PostgresRepository:
                 """,
                 *values,
             )
+
+    async def job_counts(self) -> Dict[str, int]:
+        counts = {state.value: 0 for state in AiJobState}
+        async with self.pool.acquire() as connection:
+            rows = await connection.fetch(
+                "SELECT state, COUNT(*) AS count FROM ai_jobs GROUP BY state"
+            )
+        for row in rows:
+            counts[row["state"]] = row["count"]
+        return counts
 
     async def ranked_candidates(self, category: Category) -> List[NewsRecord]:
         async with self.pool.acquire() as connection:

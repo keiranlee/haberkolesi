@@ -110,7 +110,7 @@ def test_detail_shows_original_and_generated_text():
     assert "X yayını kapalı" in html
 
 
-def test_dashboard_shows_running_collection_and_auto_refreshes():
+def test_dashboard_shows_running_collection_without_stealing_focus():
     client, repository, _ = make_panel()
     asyncio.run(repository.create_batch())
 
@@ -119,5 +119,130 @@ def test_dashboard_shows_running_collection_and_auto_refreshes():
         html = client.get("/").text
 
     assert "Haberler çekiliyor" in html
-    assert 'http-equiv="refresh"' in html
+    assert 'http-equiv="refresh"' not in html
+    assert "Durumu yenile" in html
     assert "disabled" in html
+
+
+def test_dashboard_exposes_command_center_navigation_and_operational_summary():
+    client, _, _ = make_panel()
+
+    with client:
+        login(client)
+        html = client.get("/").text
+
+    assert 'aria-label="Ana navigasyon"' in html
+    assert "Operasyon özeti" in html
+    assert "Aktif AI kuyruğu" in html
+    assert "Hazır taslak" in html
+    assert "Yayın akışı" in html
+
+
+def test_dashboard_uses_localized_editorial_state_labels():
+    client, _, _ = make_panel()
+
+    with client:
+        login(client)
+        html = client.get("/").text
+
+    assert "Taslak hazır" in html
+    assert ">drafted<" not in html
+
+
+def test_detail_is_an_editorial_workspace_with_bounded_composer():
+    client, _, news_id = make_panel()
+
+    with client:
+        login(client)
+        html = client.get(f"/news/{news_id}").text
+
+    assert "İçerik istihbaratı" in html
+    assert 'aria-label="Haber işlem adımları"' in html
+    assert 'maxlength="240"' in html
+    assert "Yayın taslağı" in html
+    assert 'href="/#news" aria-current="page"' in html
+
+
+def test_login_explains_the_editorial_workflow():
+    client, _, _ = make_panel()
+
+    with client:
+        html = client.get("/login").text
+
+    assert "Haberden yayına" in html
+    assert "Topla" in html
+    assert "Puanla" in html
+    assert "Hazırla" in html
+
+
+def test_unscored_news_does_not_offer_a_broken_prepare_action():
+    client, repository, _ = make_panel()
+    unscored = asyncio.run(
+        repository.insert_news(
+            2,
+            RawNews(
+                url="https://source.test/unscored",
+                title="Unscored news",
+                summary="Summary",
+                content="Complete unscored source content.",
+                source="Source",
+                source_category=Category.AI,
+                published_at=datetime(2026, 8, 24, tzinfo=timezone.utc),
+            ),
+        )
+    )
+
+    with client:
+        login(client)
+        html = client.get(f"/news/{unscored.id}").text
+
+    assert "Puanlama tamamlanınca metin hazırlanabilir" in html
+    assert f'action="/news/{unscored.id}/prepare"' not in html
+
+
+def test_finalized_news_is_read_only():
+    client, repository, news_id = make_panel()
+    asyncio.run(repository.approve(news_id, "Approved editor text"))
+
+    with client:
+        login(client)
+        html = client.get(f"/news/{news_id}").text
+
+    assert "Onaylanmış metin" in html
+    assert f'action="/news/{news_id}/regenerate"' not in html
+    assert f'action="/news/{news_id}/reject"' not in html
+    assert f'action="/news/{news_id}/approve"' not in html
+
+
+def test_dashboard_and_detail_expose_mobile_and_keyboard_context():
+    client, _, news_id = make_panel()
+
+    with client:
+        login(client)
+        dashboard = client.get("/").text
+        detail = client.get(f"/news/{news_id}").text
+
+    assert 'data-label="Kategori"' in dashboard
+    assert 'data-label="AI puanı"' in dashboard
+    assert 'tabindex="0" aria-label="Orijinal haber metni"' in detail
+
+
+def test_detail_displays_source_time_in_istanbul_timezone():
+    client, _, news_id = make_panel()
+
+    with client:
+        login(client)
+        html = client.get(f"/news/{news_id}").text
+
+    assert "24.08.2026 · 03:00" in html
+
+
+def test_draft_actions_explain_quota_and_confirm_rejection():
+    client, _, news_id = make_panel()
+
+    with client:
+        login(client)
+        html = client.get(f"/news/{news_id}").text
+
+    assert "Yeniden üretmek 1 Gemini isteği kullanır" in html
+    assert 'onsubmit="return confirm(' in html

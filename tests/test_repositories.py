@@ -144,6 +144,47 @@ async def test_running_job_is_reclaimed_only_after_lease_expires():
     assert reclaimed.worker_id == "worker-b"
 
 
+@pytest.mark.asyncio
+async def test_job_counts_separate_active_completed_and_failed_work():
+    repository = MemoryRepository()
+    news = await repository.insert_news(1, make_news())
+    first = await repository.enqueue_job(news.id, AiJobType.SCORE)
+    claimed = await repository.claim_next_job("worker")
+    await repository.fail_job(claimed.id, "Gemini unavailable")
+    second = await repository.enqueue_job(news.id, AiJobType.GENERATE)
+
+    counts = await repository.job_counts()
+
+    assert first.id != second.id
+    assert counts == {"pending": 1, "running": 0, "retry": 0, "completed": 0, "failed": 1}
+
+
+@pytest.mark.asyncio
+async def test_dashboard_stats_count_only_drafts_waiting_for_editor_decision():
+    repository = MemoryRepository()
+    drafted = await repository.insert_news(1, make_news("https://source.test/draft"))
+    approved = await repository.insert_news(1, make_news("https://source.test/approved"))
+    await repository.save_draft(drafted.id, "Draft", ["Fact"])
+    await repository.save_draft(approved.id, "Approved", ["Fact"])
+    await repository.approve(approved.id)
+
+    stats = await repository.dashboard_stats()
+
+    assert stats["total_news"] == 2
+    assert stats["ready_drafts"] == 1
+
+
+@pytest.mark.asyncio
+async def test_news_listing_can_be_bounded_for_dashboard_rendering():
+    repository = MemoryRepository()
+    for index in range(3):
+        await repository.insert_news(1, make_news(f"https://source.test/{index}"))
+
+    records = await repository.list_news(limit=2)
+
+    assert len(records) == 2
+
+
 @pytest.mark.skipif(
     not os.getenv("TEST_DATABASE_URL"),
     reason="TEST_DATABASE_URL is required for PostgreSQL integration",

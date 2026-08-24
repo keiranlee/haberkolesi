@@ -1,100 +1,124 @@
 {% extends "base.html" %}
-{% block head %}
-{% if latest_batch and latest_batch.state == "running" %}
-<meta http-equiv="refresh" content="5">
-{% endif %}
-{% endblock %}
 {% block content %}
-<section class="page-heading">
+<section id="overview" class="hero-row">
   <div>
-    <p class="eyebrow">Editör çalışma alanı</p>
-    <h1>Haber akışı</h1>
-    <p class="muted">Haberleri çek, puanlama kuyruğunu izle ve yalnızca iyi adaylar için metin hazırla.</p>
+    <p class="eyebrow">Canlı · Editör masası</p>
+    <h1>Gündemi yakala.<br><em>Doğru haberi seç.</em></h1>
+    <p class="hero-description">Kaynakları tara, Gemini değerlendirmesini izle ve güçlü Devosuit metinlerini yayına hazırla.</p>
   </div>
-  <form action="/collect" method="post">
+  <form action="/collect" method="post" class="collect-form">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    <button class="button button-primary" type="submit" {% if latest_batch and latest_batch.state == "running" %}disabled{% endif %}>
-      {% if latest_batch and latest_batch.state == "running" %}Haberler çekiliyor…{% else %}Haberleri çek{% endif %}
+    <button class="button button-primary button-collect" type="submit" {% if latest_batch and latest_batch.state == "running" %}disabled{% endif %}>
+      {% if latest_batch and latest_batch.state == "running" %}
+      <span class="spinner" aria-hidden="true"></span>Haberler çekiliyor…
+      {% else %}
+      <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 4V1L8 5l4 4V6a6 6 0 1 1-5.65 4H4.26A8 8 0 1 0 12 4Z"/></svg>Haberleri çek
+      {% endif %}
     </button>
+    <small>Son 24 saat · kategori başına 5 aday</small>
   </form>
 </section>
 
-<section class="metrics" aria-label="Sistem özeti">
-  <article class="metric-card">
-    <span>Gemini kuyruğu</span>
-    <strong>{{ queue_count }}</strong>
-    <small>Bekleyen ve tamamlanan işler</small>
-  </article>
-  <article class="metric-card">
-    <span>İstek aralığı</span>
-    <strong>15 sn</strong>
-    <small>Dakikada en fazla 4 istek</small>
-  </article>
-  <article class="metric-card">
-    <span>Sonraki istek</span>
-    <strong>Kuyrukta</strong>
-    <small>Worker güvenli sırayla işler</small>
-  </article>
+{% if latest_batch %}
+<section class="collection-status status-{{ latest_batch.state }}" aria-live="polite">
+  <span class="status-symbol">{% if latest_batch.state == "running" %}<span class="spinner"></span>{% elif latest_batch.state == "completed" %}✓{% else %}!{% endif %}</span>
+  <div>
+    <strong>{% if latest_batch.state == "running" %}Kaynaklar taranıyor{% elif latest_batch.state == "completed" %}Son tarama tamamlandı{% else %}Son taramada sorun oluştu{% endif %}</strong>
+    <small>{% if latest_batch.state == "running" %}Sonuçları görmek için durumu güvenli biçimde yenileyebilirsin.{% else %}{{ latest_batch.found_count }} aday bulundu · {{ latest_batch.error_count }} kaynak/çıkarma hatası{% endif %}</small>
+  </div>
+  {% if latest_batch.state == "running" %}<a class="refresh-link" href="/">Durumu yenile</a>{% else %}<span class="batch-id">Batch #{{ latest_batch.id }}</span>{% endif %}
+</section>
+{% endif %}
+
+<section class="section-block" aria-labelledby="metrics-title">
+  <div class="section-kicker"><span></span><h2 id="metrics-title">Operasyon özeti</h2></div>
+  <div class="metrics-grid">
+    <article class="metric-card metric-featured">
+      <div class="metric-icon"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M4 4h16v16H4V4Zm2 2v12h12V6H6Zm2 2h8v2H8V8Zm0 4h8v2H8v-2Zm0 4h5v2H8v-2Z"/></svg></div>
+      <div><span>Toplam haber</span><strong>{{ stats.total_news }}</strong><small>Havuzdaki tüm kayıtlar</small></div>
+      <span class="metric-trend">Canlı</span>
+    </article>
+    <article class="metric-card">
+      <div class="metric-icon icon-purple"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 2a4 4 0 0 1 4 4v1h1a4 4 0 0 1 4 4v2a4 4 0 0 1-4 4h-1v1a4 4 0 0 1-8 0v-1H7a4 4 0 0 1-4-4v-2a4 4 0 0 1 4-4h1V6a4 4 0 0 1 4-4Zm-2 5h4V6a2 2 0 1 0-4 0v1Zm0 10v1a2 2 0 1 0 4 0v-1h-4Zm-3-8a2 2 0 0 0-2 2v2a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-2a2 2 0 0 0-2-2H7Zm2 2h2v2H9v-2Zm4 0h2v2h-2v-2Z"/></svg></div>
+      <div><span>Aktif AI kuyruğu</span><strong>{{ queue_count }}</strong><small>{{ job_counts.running }} iş şu an çalışıyor</small></div>
+    </article>
+    <article class="metric-card">
+      <div class="metric-icon icon-success"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m9 16.17-3.59-3.58L4 14l5 5L20 8l-1.41-1.41L9 16.17Z"/></svg></div>
+      <div><span>Hazır taslak</span><strong>{{ stats.ready_drafts }}</strong><small>Editör kararını bekliyor</small></div>
+    </article>
+    <article class="metric-card {% if stats.failed_jobs %}metric-alert{% endif %}">
+      <div class="metric-icon icon-danger"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M11 7h2v6h-2V7Zm0 8h2v2h-2v-2Zm1-13L1 21h22L12 2Zm0 4.1L19.53 19H4.47L12 6.1Z"/></svg></div>
+      <div><span>AI hataları</span><strong>{{ stats.failed_jobs }}</strong><small>{% if stats.failed_jobs %}Gemini erişimini kontrol et{% else %}Sistem normal çalışıyor{% endif %}</small></div>
+    </article>
+  </div>
 </section>
 
-<section class="panel schedule" aria-labelledby="schedule-title">
-  <div class="section-heading">
-    <div><p class="eyebrow">Yayın önizlemesi</p><h2 id="schedule-title">Günlük kategori sırası</h2></div>
-    <span class="badge badge-off">X yayını kapalı</span>
-  </div>
-  <ol class="schedule-list">
-    <li><time>10:00</time><span>Girisim</span></li>
-    <li><time>12:00</time><span>AI</span></li>
-    <li><time>14:00</time><span>Teknoloji</span></li>
-    <li><time>16:00</time><span>AI</span></li>
-    <li><time>18:00</time><span>Yazilim</span></li>
-    <li><time>20:00</time><span>Girisim</span></li>
-  </ol>
-</section>
+<div class="operations-grid">
+  <section id="schedule" class="surface-card schedule-card" aria-labelledby="schedule-title">
+    <header class="card-header">
+      <div><p class="eyebrow">Bugünün planı</p><h2 id="schedule-title">Yayın akışı</h2></div>
+      <span class="status-badge status-paused"><span></span>X kapalı</span>
+    </header>
+    <ol class="schedule-timeline">
+      <li><time>10:00</time><span class="category-dot dot-startup"></span><strong>Girişim</strong></li>
+      <li><time>12:00</time><span class="category-dot dot-ai"></span><strong>AI</strong></li>
+      <li><time>14:00</time><span class="category-dot dot-tech"></span><strong>Teknoloji</strong></li>
+      <li><time>16:00</time><span class="category-dot dot-ai"></span><strong>AI</strong></li>
+      <li><time>18:00</time><span class="category-dot dot-code"></span><strong>Yazılım</strong></li>
+      <li><time>20:00</time><span class="category-dot dot-startup"></span><strong>Girişim</strong></li>
+    </ol>
+  </section>
 
-<section class="panel" aria-labelledby="news-title">
-  <div class="section-heading">
-    <div><p class="eyebrow">Aday havuzu</p><h2 id="news-title">Çekilen haberler</h2></div>
-  </div>
-  <form class="filters" method="get" action="/">
-    <label>Kategori
-      <select name="category">
-        <option value="">Tümü</option>
-        {% for category in categories %}
-        <option value="{{ category.value }}" {% if selected_category == category %}selected{% endif %}>{{ category.value }}</option>
-        {% endfor %}
+  <section class="surface-card queue-card" aria-labelledby="queue-title">
+    <header class="card-header"><div><p class="eyebrow">İş kuyruğu</p><h2 id="queue-title">Gemini kuyruğu</h2></div><span class="rate-badge">Sonraki istek · {% if rate_status.next_allowed_at %}{{ rate_status.next_allowed_at|istanbul_datetime }}{% else %}Hazır{% endif %}</span></header>
+    <div class="queue-stats">
+      <div><span class="queue-dot pending"></span><strong>{{ job_counts.pending }}</strong><small>Bekliyor</small></div>
+      <div><span class="queue-dot running"></span><strong>{{ job_counts.running }}</strong><small>Çalışıyor</small></div>
+      <div><span class="queue-dot retry"></span><strong>{{ job_counts.retry }}</strong><small>Tekrar</small></div>
+      <div><span class="queue-dot done"></span><strong>{{ job_counts.completed }}</strong><small>Toplam tamamlanan</small></div>
+      <div><span class="queue-dot error"></span><strong>{{ job_counts.failed }}</strong><small>Toplam hata</small></div>
+    </div>
+  </section>
+</div>
+
+<section id="news" class="surface-card news-card" aria-labelledby="news-title">
+  <header class="news-header">
+    <div><p class="eyebrow">Editör kuyruğu</p><h2 id="news-title">Haber havuzu <span>{{ records|length }}</span></h2></div>
+    <form class="state-filter" method="get" action="/">
+      {% if selected_category %}<input type="hidden" name="category" value="{{ selected_category.value }}">{% endif %}
+      <label for="state">Durum</label>
+      <select id="state" name="state" onchange="this.form.submit()">
+        <option value="">Tüm durumlar</option>
+        {% for state in states %}<option value="{{ state.value }}" {% if selected_state == state %}selected{% endif %}>{{ state_labels[state] }}</option>{% endfor %}
       </select>
-    </label>
-    <label>Durum
-      <select name="state">
-        <option value="">Tümü</option>
-        {% for state in states %}
-        <option value="{{ state.value }}" {% if selected_state == state %}selected{% endif %}>{{ state.value }}</option>
-        {% endfor %}
-      </select>
-    </label>
-    <button class="button button-secondary" type="submit">Filtrele</button>
+      <noscript><button class="button button-secondary" type="submit">Uygula</button></noscript>
+    </form>
+  </header>
+  <form class="filter-chips" method="get" action="/" aria-label="Kategori filtresi">
+    {% if selected_state %}<input type="hidden" name="state" value="{{ selected_state.value }}">{% endif %}
+    <button class="filter-chip {% if not selected_category %}is-active{% endif %}" type="submit" name="category" value="">Tümü</button>
+    {% for category in categories %}<button class="filter-chip {% if selected_category == category %}is-active{% endif %}" type="submit" name="category" value="{{ category.value }}"><span class="category-dot dot-{{ category.value|lower }}"></span>{{ category.value }}</button>{% endfor %}
   </form>
 
   {% if records %}
-  <div class="table-wrap">
-    <table>
-      <thead><tr><th>Haber</th><th>Kategori</th><th>Puan</th><th>Durum</th><th></th></tr></thead>
+  <div class="news-table-wrap">
+    <table class="news-table">
+      <thead><tr><th scope="col">Haber</th><th scope="col">Kategori</th><th scope="col">AI puanı</th><th scope="col">Durum</th><th scope="col"><span class="sr-only">İşlem</span></th></tr></thead>
       <tbody>
       {% for record in records %}
         <tr>
-          <td><strong>{{ record.raw.title }}</strong><small>{{ record.raw.source }}</small></td>
-          <td>{{ (record.ai_category or record.raw.source_category).value }}</td>
-          <td>{% if record.score is not none %}<span class="score">{{ "%.1f"|format(record.score) }}</span>{% else %}—{% endif %}</td>
-          <td><span class="badge badge-{{ record.state.value }}">{{ record.state.value }}</span></td>
-          <td><a class="text-link" href="/news/{{ record.id }}">İncele</a></td>
+          <td data-label="Haber"><a class="news-title-link" href="/news/{{ record.id }}">{{ record.raw.title }}</a><span class="news-meta">{{ record.raw.source }}{% if record.raw.published_at %} · {{ record.raw.published_at|istanbul_datetime }}{% endif %}</span></td>
+          <td data-label="Kategori"><span class="category-label"><span class="category-dot dot-{{ (record.ai_category or record.raw.source_category).value|lower }}"></span>{{ (record.ai_category or record.raw.source_category).value }}</span></td>
+          <td data-label="AI puanı">{% if record.score is not none %}<span class="score-value">{{ "%.1f"|format(record.score) }}</span><span class="score-track"><span style="width: {{ record.score * 10 }}%"></span></span>{% else %}<span class="score-empty">—</span>{% endif %}</td>
+          <td data-label="Durum"><span class="state-badge state-{{ record.state.value }}"><span></span>{{ state_labels[record.state] }}</span></td>
+          <td data-label="İşlem"><a class="row-action" href="/news/{{ record.id }}" aria-label="{{ record.raw.title }} haberini incele"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6 1.41-1.41L17.83 12l-7.42 7.41L9 18Z"/></svg></a></td>
         </tr>
       {% endfor %}
       </tbody>
     </table>
   </div>
   {% else %}
-  <div class="empty-state"><h3>Henüz haber yok</h3><p>İlk RSS taramasını başlatmak için “Haberleri çek” düğmesini kullan.</p></div>
+  <div class="empty-state"><span class="empty-icon"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Zm0 2v14h14V5H5Zm3 3h8v2H8V8Zm0 4h8v2H8v-2Zm0 4h5v2H8v-2Z"/></svg></span><h3>Bu filtrede haber yok</h3><p>Yeni adaylar için kaynakları tekrar tarayabilirsin.</p></div>
   {% endif %}
 </section>
 {% endblock %}

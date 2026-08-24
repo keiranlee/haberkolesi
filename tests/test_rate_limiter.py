@@ -1,4 +1,5 @@
 import asyncio
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -44,3 +45,22 @@ async def test_gate_serializes_simultaneous_callers():
 def test_gate_rejects_non_positive_interval():
     with pytest.raises(ValueError, match="greater than zero"):
         AsyncRequestGate(0)
+
+
+@pytest.mark.asyncio
+async def test_gate_exposes_real_next_allowed_request_time():
+    clock = FakeClock()
+    wall_now = datetime(2026, 8, 24, 12, 0, tzinfo=timezone.utc)
+    gate = AsyncRequestGate(
+        15.0,
+        clock.now,
+        clock.sleep,
+        wall_clock=lambda: wall_now,
+    )
+
+    await gate.acquire()
+
+    assert gate.status() == {
+        "last_started_at": wall_now,
+        "next_allowed_at": wall_now + timedelta(seconds=15),
+    }
