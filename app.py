@@ -107,6 +107,7 @@ def create_app(
         require_admin(request)
         records = await repository.list_news(category=category, state=state)
         queue_count = await repository.count_jobs()
+        latest_batch = await repository.latest_batch()
         return templates.TemplateResponse(
             request=request,
             name="dashboard.html",
@@ -118,6 +119,7 @@ def create_app(
                 "selected_category": category,
                 "selected_state": state,
                 "queue_count": queue_count,
+                "latest_batch": latest_batch,
                 "unsafe_password": settings.admin_password == "1234",
             },
         )

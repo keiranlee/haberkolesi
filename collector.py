@@ -130,11 +130,15 @@ class RssCollector:
         http: HttpClient,
         article_extractor: Callable[[bytes], Optional[str]] = _extract_article,
         entries_per_feed: int = 10,
+        max_concurrency: int = 8,
     ):
+        if max_concurrency < 1:
+            raise ValueError("max_concurrency must be at least 1")
         self.feeds = dict(feeds)
         self.http = http
         self.article_extractor = article_extractor
         self.entries_per_feed = entries_per_feed
+        self._request_semaphore = asyncio.Semaphore(max_concurrency)
 
     @staticmethod
     def normalized_feeds(feeds: Mapping[str, List[str]]) -> Dict[Category, List[str]]:
@@ -149,10 +153,17 @@ class RssCollector:
 
     async def collect(self) -> CollectionResult:
         result = CollectionResult()
-        for category, feed_urls in self.feeds.items():
-            for feed_url in feed_urls:
-                await self._collect_feed(category, feed_url, result)
+        tasks = [
+            self._collect_feed(category, feed_url, result)
+            for category, feed_urls in self.feeds.items()
+            for feed_url in feed_urls
+        ]
+        await asyncio.gather(*tasks)
         return result
+
+    async def _get(self, url: str) -> FetchResponse:
+        async with self._request_semaphore:
+            return await self.http.get(url)
 
     async def _collect_feed(
         self,
@@ -161,7 +172,7 @@ class RssCollector:
         result: CollectionResult,
     ) -> None:
         try:
-            response = await self.http.get(feed_url)
+            response = await self._get(feed_url)
         except FetchError as exc:
             result.errors.append(exc)
             return
@@ -178,43 +189,55 @@ class RssCollector:
             return
 
         source = parsed.feed.get("title") or urlsplit(feed_url).hostname or feed_url
-        for entry in parsed.entries[: self.entries_per_feed]:
-            url = str(entry.get("link", "")).strip()
-            if not url:
-                continue
-            try:
-                article_response = await self.http.get(url)
-            except FetchError as exc:
-                result.errors.append(exc)
-                continue
-            try:
-                content = self.article_extractor(article_response.body)
-            except Exception as exc:
-                result.errors.append(
-                    FetchError(
-                        url=url,
-                        status_code=article_response.status,
-                        message=f"article extraction failed: {exc}",
-                    )
-                )
-                continue
-            if not content or len(content.strip()) < 10:
-                result.errors.append(
-                    FetchError(
-                        url=url,
-                        status_code=article_response.status,
-                        message="article content is empty or too short",
-                    )
-                )
-                continue
-            result.items.append(
-                RawNews(
-                    url=article_response.final_url,
-                    title=str(entry.get("title", "")).strip(),
-                    summary=str(entry.get("summary", entry.get("description", ""))).strip(),
-                    content=content.strip(),
-                    source=str(source),
-                    source_category=category,
-                    published_at=_published_at(entry),
+        await asyncio.gather(
+            *(
+                self._collect_entry(category, source, entry, result)
+                for entry in parsed.entries[: self.entries_per_feed]
+            )
+        )
+
+    async def _collect_entry(self, category, source, entry, result) -> None:
+        url = str(entry.get("link", "")).strip()
+        if not url:
+            return
+        try:
+            article_response = await self._get(url)
+        except FetchError as exc:
+            result.errors.append(exc)
+            return
+        try:
+            content = await asyncio.to_thread(
+                self.article_extractor,
+                article_response.body,
+            )
+        except Exception as exc:
+            result.errors.append(
+                FetchError(
+                    url=url,
+                    status_code=article_response.status,
+                    message=f"article extraction failed: {exc}",
                 )
             )
+            return
+        if not content or len(content.strip()) < 10:
+            result.errors.append(
+                FetchError(
+                    url=url,
+                    status_code=article_response.status,
+                    message="article content is empty or too short",
+                )
+            )
+            return
+        result.items.append(
+            RawNews(
+                url=article_response.final_url,
+                title=str(entry.get("title", "")).strip(),
+                summary=str(
+                    entry.get("summary", entry.get("description", ""))
+                ).strip(),
+                content=content.strip(),
+                source=str(source),
+                source_category=category,
+                published_at=_published_at(entry),
+            )
+        )

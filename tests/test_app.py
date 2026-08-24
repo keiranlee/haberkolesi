@@ -108,3 +108,16 @@ def test_detail_shows_original_and_generated_text():
     assert "Generated text" in html
     assert "Görsel sonraki aşamada" in html
     assert "X yayını kapalı" in html
+
+
+def test_dashboard_shows_running_collection_and_auto_refreshes():
+    client, repository, _ = make_panel()
+    asyncio.run(repository.create_batch())
+
+    with client:
+        login(client)
+        html = client.get("/").text
+
+    assert "Haberler çekiliyor" in html
+    assert 'http-equiv="refresh"' in html
+    assert "disabled" in html

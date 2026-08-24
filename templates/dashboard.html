@@ -1,4 +1,9 @@
 {% extends "base.html" %}
+{% block head %}
+{% if latest_batch and latest_batch.state == "running" %}
+<meta http-equiv="refresh" content="5">
+{% endif %}
+{% endblock %}
 {% block content %}
 <section class="page-heading">
   <div>
@@ -8,7 +13,9 @@
   </div>
   <form action="/collect" method="post">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    <button class="button button-primary" type="submit">Haberleri çek</button>
+    <button class="button button-primary" type="submit" {% if latest_batch and latest_batch.state == "running" %}disabled{% endif %}>
+      {% if latest_batch and latest_batch.state == "running" %}Haberler çekiliyor…{% else %}Haberleri çek{% endif %}
+    </button>
   </form>
 </section>
 

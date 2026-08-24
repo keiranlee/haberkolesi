@@ -56,6 +56,12 @@ class MemoryRepository:
             "errors": error_count,
         }
 
+    async def latest_batch(self):
+        if not self.batches:
+            return None
+        latest_id = max(self.batches)
+        return {"id": latest_id, **deepcopy(self.batches[latest_id])}
+
     async def insert_news(self, batch_id: int, item: RawNews) -> NewsRecord:
         normalized_url = normalize_url(item.url)
         with self._lock:
@@ -356,6 +362,18 @@ class PostgresRepository:
                 "failed" if failed else "completed",
                 found_count,
                 error_count,
+            )
+
+    async def latest_batch(self):
+        async with self.pool.acquire() as connection:
+            return await connection.fetchrow(
+                """
+                SELECT id, state, found_count, error_count,
+                       started_at, completed_at
+                FROM collection_batches
+                ORDER BY id DESC
+                LIMIT 1
+                """
             )
 
     async def insert_news(self, batch_id: int, item: RawNews) -> NewsRecord:

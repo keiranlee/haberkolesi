@@ -1,3 +1,4 @@
+import asyncio
 from pathlib import Path
 
 import pytest
@@ -37,6 +38,21 @@ def extract_article(html):
     return text.replace("<article><p>", "").replace("</p></article>", "")
 
 
+class ConcurrentFeedHttp(FakeHttpClient):
+    def __init__(self):
+        super().__init__()
+        self.feed_started = 0
+        self.both_feeds_started = asyncio.Event()
+
+    async def get(self, url):
+        if url.endswith("/feed"):
+            self.feed_started += 1
+            if self.feed_started == 2:
+                self.both_feeds_started.set()
+            await asyncio.wait_for(self.both_feeds_started.wait(), timeout=0.2)
+        return await super().get(url)
+
+
 @pytest.mark.asyncio
 async def test_collect_parses_feed_and_extracts_article():
     http = FakeHttpClient()
@@ -57,6 +73,30 @@ async def test_collect_parses_feed_and_extracts_article():
     assert result.items[0].title == "Sample AI news"
     assert result.items[0].content == "Long source content."
     assert result.items[0].source_category is Category.AI
+
+
+@pytest.mark.asyncio
+async def test_collect_fetches_independent_feeds_concurrently():
+    http = ConcurrentFeedHttp()
+    for category in ("ai", "tech"):
+        http.add(f"https://{category}.test/feed", RSS_FIXTURE)
+    http.add(
+        "https://source.test/news",
+        b"<article><p>Long source content.</p></article>",
+    )
+    collector = RssCollector(
+        feeds={
+            Category.AI: ["https://ai.test/feed"],
+            Category.TEKNOLOJI: ["https://tech.test/feed"],
+        },
+        http=http,
+        article_extractor=extract_article,
+    )
+
+    result = await collector.collect()
+
+    assert len(result.items) == 2
+    assert http.feed_started == 2
 
 
 @pytest.mark.asyncio
