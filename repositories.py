@@ -78,6 +78,9 @@ class MemoryRepository:
     async def get_news(self, news_id: int) -> NewsRecord:
         return deepcopy(self._news[news_id])
 
+    async def get_job(self, job_id: int) -> AiJob:
+        return deepcopy(self._jobs[job_id])
+
     async def list_news(
         self,
         *,
@@ -357,6 +360,15 @@ class PostgresRepository:
         if row is None:
             raise KeyError(news_id)
         return self._news_from_row(row)
+
+    async def get_job(self, job_id: int) -> AiJob:
+        async with self.pool.acquire() as connection:
+            row = await connection.fetchrow(
+                "SELECT * FROM ai_jobs WHERE id = $1", job_id
+            )
+        if row is None:
+            raise KeyError(job_id)
+        return self._job_from_row(row)
 
     async def list_news(
         self,
