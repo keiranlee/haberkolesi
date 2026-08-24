@@ -47,4 +47,3 @@ def test_settings_reject_request_interval_below_rate_limit(monkeypatch):
 
     with pytest.raises(ValueError, match="at least 15"):
         Settings.from_env()
-

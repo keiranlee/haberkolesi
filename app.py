@@ -158,8 +158,10 @@ def create_app(
     ):
         require_admin(request)
         verify_csrf(request, csrf_token)
-        await pipeline.regenerate_candidate(news_id)
-        return RedirectResponse(f"/news/{news_id}", status_code=303)
+        selected = await pipeline.prepare_news_candidate(news_id)
+        if selected is None:
+            raise HTTPException(status_code=409, detail="No safe scored candidate")
+        return RedirectResponse(f"/news/{selected.id}", status_code=303)
 
     @app.post("/news/{news_id}/regenerate")
     async def regenerate(
@@ -169,7 +171,10 @@ def create_app(
     ):
         require_admin(request)
         verify_csrf(request, csrf_token)
-        await pipeline.regenerate_candidate(news_id)
+        try:
+            await pipeline.regenerate_candidate(news_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
         return RedirectResponse(f"/news/{news_id}", status_code=303)
 
     @app.post("/news/{news_id}/approve")
@@ -181,7 +186,10 @@ def create_app(
     ):
         require_admin(request)
         verify_csrf(request, csrf_token)
-        await pipeline.approve_candidate(news_id, edited_text)
+        try:
+            await pipeline.approve_candidate(news_id, edited_text)
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
         return RedirectResponse(f"/news/{news_id}", status_code=303)
 
     @app.post("/news/{news_id}/reject")
@@ -192,7 +200,10 @@ def create_app(
     ):
         require_admin(request)
         verify_csrf(request, csrf_token)
-        next_candidate = await pipeline.reject_candidate(news_id)
+        try:
+            next_candidate = await pipeline.reject_candidate(news_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
         if next_candidate is None:
             return RedirectResponse("/", status_code=303)
         return RedirectResponse(f"/news/{next_candidate.id}", status_code=303)

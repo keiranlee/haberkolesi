@@ -76,6 +76,12 @@ class NewsPipeline:
         await self.repository.enqueue_job(selected.id, AiJobType.GENERATE)
         return selected
 
+    async def prepare_news_candidate(self, news_id: int) -> Optional[NewsRecord]:
+        """Prepare the highest-ranked safe candidate in the requested item's category."""
+        record = await self.repository.get_news(news_id)
+        category = record.ai_category or record.raw.source_category
+        return await self.prepare_candidate(category)
+
     async def reject_candidate(self, news_id: int) -> Optional[NewsRecord]:
         record = await self.repository.get_news(news_id)
         category = record.ai_category or record.raw.source_category
@@ -91,5 +97,7 @@ class NewsPipeline:
 
     async def regenerate_candidate(self, news_id: int) -> NewsRecord:
         record = await self.repository.get_news(news_id)
+        if record.state is not NewsState.DRAFTED:
+            raise ValueError("Only a drafted candidate can be regenerated")
         await self.repository.enqueue_job(record.id, AiJobType.GENERATE)
         return record

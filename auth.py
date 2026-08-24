@@ -33,4 +33,3 @@ def verify_csrf(request: Request, submitted_token: str) -> None:
 
 def verify_password(submitted: str, configured: str) -> bool:
     return secrets.compare_digest(submitted.encode(), configured.encode())
-

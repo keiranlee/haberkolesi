@@ -100,6 +100,28 @@ async def test_article_failure_skips_item_and_records_error():
     assert result.errors[0].status_code == 503
 
 
+@pytest.mark.asyncio
+async def test_article_extractor_failure_isolated_to_entry():
+    http = FakeHttpClient()
+    http.add("https://source.test/feed", RSS_FIXTURE)
+    http.add("https://source.test/news", b"broken article")
+
+    def broken_extractor(_):
+        raise ValueError("parser crashed")
+
+    collector = RssCollector(
+        feeds={Category.AI: ["https://source.test/feed"]},
+        http=http,
+        article_extractor=broken_extractor,
+    )
+
+    result = await collector.collect()
+
+    assert result.items == []
+    assert result.errors[0].url == "https://source.test/news"
+    assert "parser crashed" in result.errors[0].message
+
+
 def test_default_feed_mapping_converts_legacy_category_names():
     feeds = RssCollector.normalized_feeds(
         {

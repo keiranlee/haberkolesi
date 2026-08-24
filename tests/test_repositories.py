@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 import pytest
 
 from domain import AiJobState, AiJobType, Category, NewsState, RawNews
-from repositories import MemoryRepository
+from repositories import MemoryRepository, PostgresRepository
 
 
 def make_news(url="https://source.test/news"):
@@ -63,6 +63,19 @@ async def test_approve_records_edited_text_without_publishing():
 
 
 @pytest.mark.asyncio
+async def test_approve_rejects_undrafted_news_and_oversized_text():
+    repository = MemoryRepository()
+    news = await repository.insert_news(1, make_news())
+
+    with pytest.raises(ValueError, match="drafted"):
+        await repository.approve(news.id, "Text")
+
+    await repository.save_draft(news.id, "Generated text", ["Fact"])
+    with pytest.raises(ValueError, match="240"):
+        await repository.approve(news.id, "x" * 241)
+
+
+@pytest.mark.asyncio
 async def test_retry_job_becomes_claimable_only_after_next_attempt():
     repository = MemoryRepository()
     news = await repository.insert_news(1, make_news())
@@ -80,6 +93,55 @@ async def test_retry_job_becomes_claimable_only_after_next_attempt():
 
     assert too_early is None
     assert ready.id == job.id
+
+
+def test_postgres_row_decodes_jsonb_strings_as_fact_lists():
+    raw = make_news()
+    row = {
+        "id": 1,
+        "batch_id": 1,
+        "source_url": raw.url,
+        "normalized_url": raw.url,
+        "title": raw.title,
+        "summary": raw.summary,
+        "content": raw.content,
+        "source": raw.source,
+        "source_category": raw.source_category.value,
+        "published_at": raw.published_at,
+        "state": "scored",
+        "score": 9.0,
+        "ai_category": "AI",
+        "score_reason": "Reason",
+        "key_facts": '["Fact one", "Fact two"]',
+        "risk_flags": '["Rumor"]',
+        "is_publishable": True,
+        "draft_text": None,
+        "external_post_id": None,
+    }
+
+    record = PostgresRepository._news_from_row(row)
+
+    assert record.key_facts == ["Fact one", "Fact two"]
+    assert record.risk_flags == ["Rumor"]
+
+
+@pytest.mark.asyncio
+async def test_running_job_is_reclaimed_only_after_lease_expires():
+    repository = MemoryRepository()
+    news = await repository.insert_news(1, make_news())
+    original = await repository.enqueue_job(news.id, AiJobType.SCORE)
+    await repository.claim_next_job("worker-a", now=datetime(2026, 8, 24, 12, 0, tzinfo=timezone.utc))
+
+    early = await repository.claim_next_job(
+        "worker-b", now=datetime(2026, 8, 24, 12, 4, tzinfo=timezone.utc)
+    )
+    reclaimed = await repository.claim_next_job(
+        "worker-b", now=datetime(2026, 8, 24, 12, 6, tzinfo=timezone.utc)
+    )
+
+    assert early is None
+    assert reclaimed.id == original.id
+    assert reclaimed.worker_id == "worker-b"
 
 
 @pytest.mark.skipif(

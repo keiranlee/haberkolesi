@@ -4,7 +4,7 @@ import asyncio
 import json
 import threading
 from copy import deepcopy
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional
 
 from domain import (
@@ -130,6 +130,15 @@ class MemoryRepository:
     async def approve(self, news_id: int, edited_text: Optional[str] = None) -> None:
         with self._lock:
             record = self._news[news_id]
+            if record.state is not NewsState.DRAFTED:
+                raise ValueError("Only drafted news can be approved")
+            candidate_text = (
+                edited_text.strip() if edited_text is not None else record.draft_text
+            )
+            if not candidate_text:
+                raise ValueError("Approved text cannot be empty")
+            if len(candidate_text) > 240:
+                raise ValueError("Approved text cannot exceed 240 characters")
             if edited_text is not None and edited_text.strip():
                 record.draft_text = edited_text.strip()
                 self.generation_versions.setdefault(news_id, []).append(
@@ -142,6 +151,8 @@ class MemoryRepository:
 
     async def reject(self, news_id: int) -> None:
         with self._lock:
+            if self._news[news_id].state is not NewsState.DRAFTED:
+                raise ValueError("Only drafted news can be rejected")
             self._news[news_id].state = NewsState.REJECTED
             self.editor_actions.append(
                 EditorAction(news_id, "reject", datetime.now(timezone.utc))
@@ -174,17 +185,23 @@ class MemoryRepository:
         now: Optional[datetime] = None,
     ) -> Optional[AiJob]:
         current_time = now or datetime.now(timezone.utc)
+        stale_before = current_time - timedelta(minutes=5)
         with self._lock:
             for job in sorted(self._jobs.values(), key=lambda candidate: candidate.id):
                 ready = job.state is AiJobState.PENDING or (
                     job.state is AiJobState.RETRY
                     and job.next_attempt_at is not None
                     and job.next_attempt_at <= current_time
+                ) or (
+                    job.state is AiJobState.RUNNING
+                    and job.claimed_at is not None
+                    and job.claimed_at <= stale_before
                 )
                 if not ready:
                     continue
                 job.state = AiJobState.RUNNING
                 job.worker_id = worker_id
+                job.claimed_at = current_time
                 job.attempts += 1
                 return deepcopy(job)
         return None
@@ -192,6 +209,7 @@ class MemoryRepository:
     async def complete_job(self, job_id: int) -> None:
         with self._lock:
             self._jobs[job_id].state = AiJobState.COMPLETED
+            self._jobs[job_id].claimed_at = None
 
     async def retry_job(
         self,
@@ -205,6 +223,7 @@ class MemoryRepository:
             job.next_attempt_at = next_attempt_at
             job.last_error = error
             job.worker_id = None
+            job.claimed_at = None
 
     async def fail_job(self, job_id: int, error: str) -> None:
         with self._lock:
@@ -212,6 +231,7 @@ class MemoryRepository:
             job.state = AiJobState.FAILED
             job.last_error = error
             job.worker_id = None
+            job.claimed_at = None
 
     async def count_jobs(
         self,
@@ -219,7 +239,12 @@ class MemoryRepository:
         job_type: Optional[AiJobType] = None,
         category: Optional[Category] = None,
     ) -> int:
-        jobs = list(self._jobs.values())
+        jobs = [
+            job
+            for job in self._jobs.values()
+            if job.state
+            in {AiJobState.PENDING, AiJobState.RUNNING, AiJobState.RETRY}
+        ]
         if job_type is not None:
             jobs = [job for job in jobs if job.job_type is job_type]
         if category is not None:
@@ -243,6 +268,7 @@ class MemoryRepository:
             for record in self._news.values()
             if record.ai_category is category
             and record.is_publishable is True
+            and not record.risk_flags
             and record.state is NewsState.SCORED
         ]
         records.sort(key=lambda record: (record.score or 0, -record.id), reverse=True)
@@ -275,12 +301,20 @@ class PostgresRepository:
             score=row["score"],
             ai_category=Category(row["ai_category"]) if row["ai_category"] else None,
             score_reason=row["score_reason"],
-            key_facts=list(row["key_facts"] or []),
-            risk_flags=list(row["risk_flags"] or []),
+            key_facts=PostgresRepository._json_list(row["key_facts"]),
+            risk_flags=PostgresRepository._json_list(row["risk_flags"]),
             is_publishable=row["is_publishable"],
             draft_text=row["draft_text"],
             external_post_id=row["external_post_id"],
         )
+
+    @staticmethod
+    def _json_list(value) -> List[str]:
+        if value is None:
+            return []
+        if isinstance(value, str):
+            value = json.loads(value)
+        return list(value)
 
     @staticmethod
     def _job_from_row(row) -> AiJob:
@@ -291,6 +325,7 @@ class PostgresRepository:
             state=AiJobState(row["state"]),
             attempts=row["attempts"],
             next_attempt_at=row["next_attempt_at"],
+            claimed_at=row["claimed_at"] if "claimed_at" in row else None,
             worker_id=row["worker_id"],
             last_error=row["last_error"],
         )
@@ -449,14 +484,36 @@ class PostgresRepository:
                 )
 
     async def approve(self, news_id: int, edited_text: Optional[str] = None) -> None:
+        record = await self.get_news(news_id)
+        if record.state is not NewsState.DRAFTED:
+            raise ValueError("Only drafted news can be approved")
+        candidate_text = (
+            edited_text.strip() if edited_text is not None else record.draft_text
+        )
+        if not candidate_text:
+            raise ValueError("Approved text cannot be empty")
+        if len(candidate_text) > 240:
+            raise ValueError("Approved text cannot exceed 240 characters")
         async with self.pool.acquire() as connection:
             async with connection.transaction():
                 if edited_text is not None and edited_text.strip():
-                    await connection.execute(
+                    updated_id = await connection.fetchval(
                         """
                         UPDATE news_items
                         SET draft_text = $2, state = 'approved', updated_at = NOW()
-                        WHERE id = $1
+                        WHERE id = $1 AND state = 'drafted'
+                        RETURNING id
+                        """,
+                        news_id,
+                        edited_text.strip(),
+                    )
+                    if updated_id is None:
+                        raise ValueError("Only drafted news can be approved")
+                    await connection.execute(
+                        """
+                        INSERT INTO generation_versions
+                            (news_id, generated_text, used_facts, model_name)
+                        VALUES ($1, $2, '[]'::jsonb, 'editor')
                         """,
                         news_id,
                         edited_text.strip(),
@@ -466,30 +523,39 @@ class PostgresRepository:
                         news_id,
                     )
                 else:
-                    await connection.execute(
+                    updated_id = await connection.fetchval(
                         """
                         UPDATE news_items
                         SET state = 'approved', updated_at = NOW()
-                        WHERE id = $1
+                        WHERE id = $1 AND state = 'drafted'
+                        RETURNING id
                         """,
                         news_id,
                     )
+                    if updated_id is None:
+                        raise ValueError("Only drafted news can be approved")
                 await connection.execute(
                     "INSERT INTO editor_actions (news_id, action) VALUES ($1, 'approve')",
                     news_id,
                 )
 
     async def reject(self, news_id: int) -> None:
+        record = await self.get_news(news_id)
+        if record.state is not NewsState.DRAFTED:
+            raise ValueError("Only drafted news can be rejected")
         async with self.pool.acquire() as connection:
             async with connection.transaction():
-                await connection.execute(
+                updated_id = await connection.fetchval(
                     """
                     UPDATE news_items
                     SET state = 'rejected', updated_at = NOW()
-                    WHERE id = $1
+                    WHERE id = $1 AND state = 'drafted'
+                    RETURNING id
                     """,
                     news_id,
                 )
+                if updated_id is None:
+                    raise ValueError("Only drafted news can be rejected")
                 await connection.execute(
                     "INSERT INTO editor_actions (news_id, action) VALUES ($1, 'reject')",
                     news_id,
@@ -518,6 +584,7 @@ class PostgresRepository:
         now: Optional[datetime] = None,
     ) -> Optional[AiJob]:
         current_time = now or datetime.now(timezone.utc)
+        stale_before = current_time - timedelta(minutes=5)
         async with self.pool.acquire() as connection:
             async with connection.transaction():
                 row = await connection.fetchrow(
@@ -525,11 +592,13 @@ class PostgresRepository:
                     SELECT * FROM ai_jobs
                     WHERE state = 'pending'
                        OR (state = 'retry' AND next_attempt_at <= $1)
+                       OR (state = 'running' AND claimed_at <= $2)
                     ORDER BY id
                     FOR UPDATE SKIP LOCKED
                     LIMIT 1
                     """,
                     current_time,
+                    stale_before,
                 )
                 if row is None:
                     return None
@@ -537,12 +606,14 @@ class PostgresRepository:
                     """
                     UPDATE ai_jobs
                     SET state = 'running', worker_id = $2,
-                        attempts = attempts + 1, updated_at = NOW()
+                        attempts = attempts + 1, claimed_at = $3,
+                        updated_at = NOW()
                     WHERE id = $1
                     RETURNING *
                     """,
                     row["id"],
                     worker_id,
+                    current_time,
                 )
         return self._job_from_row(row)
 
@@ -560,7 +631,7 @@ class PostgresRepository:
                 """
                 UPDATE ai_jobs
                 SET state = 'retry', next_attempt_at = $2, last_error = $3,
-                    worker_id = NULL, updated_at = NOW()
+                    worker_id = NULL, claimed_at = NULL, updated_at = NOW()
                 WHERE id = $1
                 """,
                 job_id,
@@ -582,7 +653,7 @@ class PostgresRepository:
                 """
                 UPDATE ai_jobs
                 SET state = $2, last_error = $3, worker_id = NULL,
-                    updated_at = NOW()
+                    claimed_at = NULL, updated_at = NOW()
                 WHERE id = $1
                 """,
                 job_id,
@@ -596,7 +667,7 @@ class PostgresRepository:
         job_type: Optional[AiJobType] = None,
         category: Optional[Category] = None,
     ) -> int:
-        conditions = []
+        conditions = ["jobs.state IN ('pending', 'running', 'retry')"]
         values = []
         if job_type is not None:
             values.append(job_type.value)
@@ -625,6 +696,7 @@ class PostgresRepository:
                 SELECT * FROM news_items
                 WHERE ai_category = $1 AND is_publishable = TRUE
                   AND state = 'scored'
+                  AND (risk_flags IS NULL OR risk_flags = '[]'::jsonb)
                 ORDER BY score DESC, id ASC
                 """,
                 category.value,

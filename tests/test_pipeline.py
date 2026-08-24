@@ -55,6 +55,12 @@ class FakeGemini:
         return DraftResult(text="Devosuit haber metni #AI", used_facts=["Somut bilgi."])
 
 
+class HttpError(RuntimeError):
+    def __init__(self, status_code):
+        super().__init__(f"HTTP {status_code}")
+        self.status_code = status_code
+
+
 @pytest.mark.asyncio
 async def test_collection_enqueues_at_most_five_scores_per_category():
     repository = MemoryRepository()
@@ -93,6 +99,66 @@ async def test_prepare_generates_only_highest_scored_candidate():
 
     assert selected.score == 9.1
     assert await repository.count_jobs(job_type=AiJobType.GENERATE, category=Category.AI) == 1
+
+
+@pytest.mark.asyncio
+async def test_prepare_skips_candidate_with_risk_flags():
+    repository = MemoryRepository()
+    records = []
+    for index, (score, risks) in enumerate([(9.8, ["Unverified"]), (9.1, [])]):
+        record = await repository.insert_news(1, make_news(Category.AI, index))
+        await repository.save_score(
+            record.id,
+            ScoreResult(
+                score=score,
+                category=Category.AI,
+                reason="Güncel.",
+                key_facts=["Somut bilgi."],
+                risk_flags=risks,
+                is_publishable=True,
+            ),
+        )
+        records.append(record)
+    pipeline = NewsPipeline(repository, FakeCollector([]), now=lambda: NOW)
+
+    selected = await pipeline.prepare_candidate(Category.AI)
+
+    assert selected.id == records[1].id
+
+
+@pytest.mark.asyncio
+async def test_prepare_by_news_id_still_selects_highest_scored_candidate():
+    repository = MemoryRepository()
+    records = []
+    for index, score in enumerate([9.4, 8.1]):
+        record = await repository.insert_news(1, make_news(Category.AI, index))
+        await repository.save_score(
+            record.id,
+            ScoreResult(
+                score=score,
+                category=Category.AI,
+                reason="Güncel.",
+                key_facts=["Somut bilgi."],
+                risk_flags=[],
+                is_publishable=True,
+            ),
+        )
+        records.append(record)
+    pipeline = NewsPipeline(repository, FakeCollector([]), now=lambda: NOW)
+
+    selected = await pipeline.prepare_news_candidate(records[1].id)
+
+    assert selected.id == records[0].id
+
+
+@pytest.mark.asyncio
+async def test_regenerate_requires_an_existing_draft():
+    repository = MemoryRepository()
+    record = await repository.insert_news(1, make_news(Category.AI, 1))
+    pipeline = NewsPipeline(repository, FakeCollector([]), now=lambda: NOW)
+
+    with pytest.raises(ValueError, match="drafted"):
+        await pipeline.regenerate_candidate(record.id)
 
 
 @pytest.mark.asyncio
@@ -153,3 +219,24 @@ async def test_worker_retries_temporary_failure_with_backoff():
     saved_job = await repository.get_job(job.id)
     assert saved_job.state is AiJobState.RETRY
     assert saved_job.next_attempt_at == NOW + timedelta(seconds=30)
+
+
+@pytest.mark.asyncio
+async def test_worker_stops_retrying_http_429_after_max_attempts():
+    repository = MemoryRepository()
+    record = await repository.insert_news(1, make_news(Category.AI, 1))
+    job = await repository.enqueue_job(record.id, AiJobType.SCORE)
+    gemini = FakeGemini()
+    gemini.fail_with = HttpError(429)
+    worker = AiWorker(
+        repository,
+        gemini,
+        worker_id="test",
+        now=lambda: NOW,
+        max_attempts=1,
+    )
+
+    await worker.run_once()
+
+    saved_job = await repository.get_job(job.id)
+    assert saved_job.state is AiJobState.FAILED

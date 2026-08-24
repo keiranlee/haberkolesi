@@ -71,6 +71,7 @@ class AiJob:
     state: AiJobState
     attempts: int = 0
     next_attempt_at: Optional[datetime] = None
+    claimed_at: Optional[datetime] = None
     worker_id: Optional[str] = None
     last_error: Optional[str] = None
 
@@ -80,4 +81,3 @@ class EditorAction:
     news_id: int
     action: str
     created_at: datetime
-

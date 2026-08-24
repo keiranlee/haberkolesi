@@ -43,22 +43,22 @@ def render_smoke_report(result: SmokeResult) -> str:
     )
     return f"""# Devosuit Gemini Haber Testi
 
-**Oluşturulma:** {result.created_at.isoformat()}  
-**Model:** {GEMINI_MODEL}  
+**Oluşturulma:** {result.created_at.isoformat()}
+**Model:** {GEMINI_MODEL}
 **Kategori:** {result.score.category.value}
 
 ## Orijinal haber
 
-**Başlık:** {result.news.title}  
-**Kaynak:** {result.news.source}  
+**Başlık:** {result.news.title}
+**Kaynak:** {result.news.source}
 **URL:** {result.news.url}
 
 {result.news.content}
 
 ## Gemini puanı
 
-**Puan:** {result.score.score:.1f}/10  
-**Yayınlanabilir:** {"Evet" if result.score.is_publishable else "Hayır"}  
+**Puan:** {result.score.score:.1f}/10
+**Yayınlanabilir:** {"Evet" if result.score.is_publishable else "Hayır"}
 **Gerekçe:** {result.score.reason}
 
 ### Temel gerçekler

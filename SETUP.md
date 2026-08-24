@@ -39,6 +39,7 @@ cp .env.example .env
 | `GEMINI_MIN_SCORE` | `8.0` | Minimum skorlama eşiği |
 | `GEMINI_MIN_INTERVAL_SECONDS` | `15` | Gemini istekleri arasındaki alt sınır |
 | `CANDIDATE_LIMIT_PER_CATEGORY` | `5` | Toplama başına kategori aday sınırı |
+| `COOKIE_SECURE` | `false` | HTTPS dağıtımında mutlaka `true` olmalı |
 | `DB_MIN_POOL` | `2` | Minimum DB bağlantı sayısı |
 | `DB_MAX_POOL` | `10` | Maksimum DB bağlantı sayısı |
 | `MIN_DELAY` | `2.0` | Minimum gecikme (saniye) |
@@ -133,6 +134,9 @@ Coolify'da uygulama ayarlarından **Persistent Storage** bölümüne gidin:
 ### 3.3 Ortam Değişkenleri
 
 Coolify'da **Environment Variables** bölümüne `.env` dosyasındaki tüm değişkenleri ekleyin.
+
+Canlı HTTPS ortamında oturum çerezini güvenli tutmak için `COOKIE_SECURE=true`
+ayarlayın. Yerel HTTP geliştirmesinde `false` kalabilir.
 
 ### 3.4 Sağlık Kontrolü
 

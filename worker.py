@@ -1,11 +1,15 @@
 """Durable worker for queued Gemini score and draft jobs."""
 
 import asyncio
+import logging
 from datetime import datetime, timedelta, timezone
 from typing import Callable, Optional
 
 from domain import AiJobType
 from gemini_service import InvalidGeminiResponse, ScoreResult, UnsafeDraftError
+
+
+logger = logging.getLogger(__name__)
 
 
 class RetryableAiError(RuntimeError):
@@ -58,15 +62,7 @@ class AiWorker:
                 )
             await self.repository.complete_job(job.id)
         except RetryableAiError as exc:
-            if job.attempts >= self.max_attempts:
-                await self.repository.fail_job(job.id, str(exc))
-            else:
-                delay = min(300, 15 * (2 ** job.attempts))
-                await self.repository.retry_job(
-                    job.id,
-                    self.now() + timedelta(seconds=delay),
-                    str(exc),
-                )
+            await self._retry_or_fail(job, exc)
         except (InvalidGeminiResponse, UnsafeDraftError, ValueError) as exc:
             await self.repository.fail_job(job.id, str(exc))
         except Exception as exc:
@@ -76,15 +72,21 @@ class AiWorker:
             if status_code == 429 or (
                 isinstance(status_code, int) and 500 <= status_code < 600
             ):
-                delay = min(300, 15 * (2 ** job.attempts))
-                await self.repository.retry_job(
-                    job.id,
-                    self.now() + timedelta(seconds=delay),
-                    str(exc),
-                )
+                await self._retry_or_fail(job, exc)
             else:
                 await self.repository.fail_job(job.id, str(exc))
         return True
+
+    async def _retry_or_fail(self, job, error: Exception) -> None:
+        if job.attempts >= self.max_attempts:
+            await self.repository.fail_job(job.id, str(error))
+            return
+        delay = min(300, 15 * (2 ** job.attempts))
+        await self.repository.retry_job(
+            job.id,
+            self.now() + timedelta(seconds=delay),
+            str(error),
+        )
 
     def start(self) -> None:
         if self._task is None or self._task.done():
@@ -99,7 +101,11 @@ class AiWorker:
 
     async def _run(self) -> None:
         while not self._stop_event.is_set():
-            worked = await self.run_once()
+            try:
+                worked = await self.run_once()
+            except Exception:
+                logger.exception("AI worker iteration failed")
+                worked = False
             if not worked:
                 try:
                     await asyncio.wait_for(

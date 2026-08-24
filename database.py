@@ -131,19 +131,23 @@ CREATE TABLE IF NOT EXISTS ai_jobs (
                     CHECK (state IN ('pending', 'running', 'retry', 'completed', 'failed')),
     attempts        INTEGER NOT NULL DEFAULT 0,
     next_attempt_at TIMESTAMPTZ,
+    claimed_at      TIMESTAMPTZ,
     worker_id       TEXT,
     last_error      TEXT,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+ALTER TABLE ai_jobs
+    ADD COLUMN IF NOT EXISTS claimed_at TIMESTAMPTZ;
+
 CREATE UNIQUE INDEX IF NOT EXISTS idx_ai_jobs_one_active
     ON ai_jobs (news_id, job_type)
     WHERE state IN ('pending', 'running', 'retry');
 
 CREATE INDEX IF NOT EXISTS idx_ai_jobs_claim
-    ON ai_jobs (state, next_attempt_at, id)
-    WHERE state IN ('pending', 'retry');
+    ON ai_jobs (state, next_attempt_at, claimed_at, id)
+    WHERE state IN ('pending', 'running', 'retry');
 
 CREATE INDEX IF NOT EXISTS idx_news_items_ranking
     ON news_items (ai_category, score DESC)

@@ -187,7 +187,17 @@ class RssCollector:
             except FetchError as exc:
                 result.errors.append(exc)
                 continue
-            content = self.article_extractor(article_response.body)
+            try:
+                content = self.article_extractor(article_response.body)
+            except Exception as exc:
+                result.errors.append(
+                    FetchError(
+                        url=url,
+                        status_code=article_response.status,
+                        message=f"article extraction failed: {exc}",
+                    )
+                )
+                continue
             if not content or len(content.strip()) < 10:
                 result.errors.append(
                     FetchError(
