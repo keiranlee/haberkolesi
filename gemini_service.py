@@ -4,7 +4,7 @@ import json
 import re
 from typing import Any, Dict, List, Protocol, Type
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError
 
 from domain import Category, RawNews
 from rate_limiter import AsyncRequestGate
@@ -19,8 +19,6 @@ class UnsafeDraftError(ValueError):
 
 
 class ScoreResult(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
     score: float = Field(ge=0, le=10)
     category: Category
     reason: str = Field(min_length=1, max_length=500)
@@ -30,8 +28,6 @@ class ScoreResult(BaseModel):
 
 
 class DraftResult(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
     text: str = Field(min_length=1)
     used_facts: List[str] = Field(min_length=1, max_length=12)
 
@@ -82,6 +78,9 @@ class GoogleGenAITransport:
         except (TypeError, json.JSONDecodeError) as exc:
             raise InvalidGeminiResponse("Gemini did not return valid JSON") from exc
 
+    async def close(self) -> None:
+        await self.client.aio.aclose()
+
 
 class GeminiService:
     def __init__(
@@ -96,6 +95,11 @@ class GeminiService:
         self.gate = gate
         self.model = model
         self.max_draft_chars = max_draft_chars
+
+    async def close(self) -> None:
+        close = getattr(self.transport, "close", None)
+        if close is not None:
+            await close()
 
     async def score_news(self, news: RawNews) -> ScoreResult:
         prompt = self._score_prompt(news)

@@ -49,6 +49,10 @@ def make_service(transport, gate=None, max_draft_chars=240):
     )
 
 
+def test_api_schema_avoids_unsupported_additional_properties_keyword():
+    assert "additionalProperties" not in ScoreResult.model_json_schema()
+
+
 @pytest.mark.asyncio
 async def test_score_news_returns_validated_structured_result(news):
     transport = FakeTransport(

@@ -66,6 +66,7 @@ async def build_app():
     scheduler = create_scheduler(pipeline)
 
     async def close_resources():
+        await gemini.close()
         await http_client.close()
         await close_pool()
 

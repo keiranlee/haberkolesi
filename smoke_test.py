@@ -104,23 +104,27 @@ async def run_live(category: Category, output: Path) -> SmokeResult:
         errors = "; ".join(error.message for error in collected.errors[:5])
         raise RuntimeError(f"No recent {category.value} candidate found. {errors}")
 
+    transport = GoogleGenAITransport(GEMINI_API_KEY)
     service = GeminiService(
-        transport=GoogleGenAITransport(GEMINI_API_KEY),
+        transport=transport,
         gate=AsyncRequestGate(GEMINI_MIN_INTERVAL_SECONDS),
         model=GEMINI_MODEL,
     )
-    scored: List[tuple] = []
-    for news in candidates:
-        score = await service.score_news(news)
-        if score.is_publishable and score.score >= GEMINI_MIN_SCORE:
-            scored.append((news, score))
-    if not scored:
-        raise RuntimeError(
-            f"No {category.value} candidate passed score {GEMINI_MIN_SCORE:.1f}"
-        )
+    try:
+        scored: List[tuple] = []
+        for news in candidates:
+            score = await service.score_news(news)
+            if score.is_publishable and score.score >= GEMINI_MIN_SCORE:
+                scored.append((news, score))
+        if not scored:
+            raise RuntimeError(
+                f"No {category.value} candidate passed score {GEMINI_MIN_SCORE:.1f}"
+            )
 
-    news, score = max(scored, key=lambda pair: pair[1].score)
-    draft = await service.generate_draft(news, score)
+        news, score = max(scored, key=lambda pair: pair[1].score)
+        draft = await service.generate_draft(news, score)
+    finally:
+        await service.close()
     result = SmokeResult(
         news=news,
         score=score,
