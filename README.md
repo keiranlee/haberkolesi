@@ -1,145 +1,92 @@
-# 📰 Haber Kölesi — Otomatik Haber Botu
+# Devosuit Haber Paneli
 
-> Belirlenen haber siteleri (RSS) ve X (Twitter) hesaplarından veri toplayan, İngilizce kaynakları Türkçe'ye çeviren, Gemini AI ile skorlayıp filtreleyen ve X ile Threads'te otomatik paylaşım yapan profesyonel haber botu.
+RSS kaynaklarından güncel teknoloji haberlerini toplayan, Gemini ile kategorize edip puanlayan ve editör onayına sunulacak Türkçe Devosuit metinleri hazırlayan yönetim paneli.
 
----
+Bu branch birinci aşamadır. Görsel üretimi ve X paylaşımı kapalıdır.
 
-## 🏗️ Mimari
+## Akış
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                        HABER KÖLESİ                             │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│  ┌─────────────┐    ┌──────────────┐    ┌──────────────────┐    │
-│  │  RSS Feeds  │───▶│   Scraper    │───▶│  Deep Translator │    │
-│  │  (17 kaynak)│    │  (Toplayıcı) │    │  (EN → TR çeviri)│    │
-│  └─────────────┘    └──────┬───────┘    └────────┬─────────┘    │
-│                            │                      │              │
-│  ┌─────────────┐           │              ┌───────▼─────────┐   │
-│  │  X Accounts │───▶───────┘              │   Gemini AI     │   │
-│  │  (20 hesap) │                          │   (Skorlama)    │   │
-│  └─────────────┘                          └───────┬─────────┘   │
-│                                                   │              │
-│                                           ┌───────▼─────────┐   │
-│                                           │   PostgreSQL    │   │
-│                                           │  (Haber Havuzu) │   │
-│                                           └───────┬─────────┘   │
-│                                                   │              │
-│                                           ┌───────▼─────────┐   │
-│                                           │   Publisher     │   │
-│                                           │  (Paylaşıcı)   │   │
-│                                           └──┬──────────┬───┘   │
-│                                              │          │        │
-│                                        ┌─────▼──┐  ┌───▼────┐   │
-│                                        │   X    │  │Threads │   │
-│                                        │(Tweet) │  │(Post)  │   │
-│                                        └────────┘  └────────┘   │
-│                                                                 │
-│  ┌──────────────────────────────────────────────────────────┐   │
-│  │  APScheduler (AsyncIOScheduler, TZ=Europe/Istanbul)      │   │
-│  │  • Toplayıcı: Her 1 saatte bir                           │   │
-│  │  • Paylaşıcı: 07:00-00:00 arası her saat başı           │   │
-│  └──────────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────────┘
+```text
+RSS → 24 saat filtresi → tekrar temizleme → kategori başına 5 aday
+    → Gemini puanı → en iyi aday → Devosuit metni → panel onayı
 ```
 
-## 📁 Proje Yapısı
+Kategoriler:
 
-```
-haberkolesi/
-├── main.py              # Ana giriş noktası, zamanlayıcı
-├── scraper.py           # RSS + Twitter toplayıcı modülü
-├── publisher.py         # X ve Threads paylaşıcı modülü
-├── database.py          # PostgreSQL bağlantı havuzu ve CRUD
-├── config.py            # Yapılandırma, kaynaklar, sabitler
-├── requirements.txt     # Python bağımlılıkları
-├── Dockerfile           # Docker imaj tanımı
-├── .env.example         # Ortam değişkenleri şablonu
-├── README.md            # Bu dosya
-└── SETUP.md             # Kurulum ve dağıtım rehberi
-```
+- `Girisim`
+- `AI`
+- `Teknoloji`
+- `Yazilim`
 
-## ⚡ Temel Özellikler
+Gemini istekleri tek kuyrukta ve en az 15 saniye arayla başlatılır. İlk anda yalnız en yüksek puanlı aday için metin üretilir. Ret verilirse sıradaki aday hazırlanır.
 
-### 1. Toplayıcı (Collector)
-- **17 RSS Feed** ve **20 X hesabından** haber toplama
-- 4 kategori: `Startup`, `Teknoloji`, `AI`, `Yazilim`
-- `trafilatura` ile zengin içerik çekme
-- `deep-translator` ile otomatik İngilizce → Türkçe çeviri
-- Türkçe kaynaklar otomatik algılanır, çeviri atlanır
-- **Gemini 1.5 Flash** ile akıllı skorlama (8+ skor filtresi)
-
-### 2. Paylaşıcı (Publisher)
-- **Günde 18 gönderi** (07:00 - 00:00 arası her saat başı)
-- **Dinamik kota yönetimi**: En az 10 gönderi `Startup` kategorisinden
-- Aynı anda X ve Threads'te yayın
-- Paylaşılan haberler otomatik işaretlenir
-
-### 3. Güvenlik & Anti-Bot
-- Rastgele User-Agent rotasyonu (`fake_useragent`)
-- Gerçek tarayıcı header'ları (Chrome/Firefox/Edge)
-- Rastgele gecikmeler (2-7 saniye jitter)
-- Exponential backoff ile yeniden deneme (`tenacity`)
-- Rate limit koruması (429 hata yönetimi)
-
-### 4. Dayanıklılık
-- Asenkron mimari (`asyncio`)
-- PostgreSQL connection pooling (`asyncpg`)
-- Graceful shutdown (SIGTERM/SIGINT)
-- Kapsamlı loglama (dosya + konsol)
-- Her hata izole edilir, sistem çökmez
-
-## 🗄️ Veritabanı Şeması
-
-```sql
-CREATE TABLE haber_havuzu (
-    id                SERIAL PRIMARY KEY,
-    kaynak_url        TEXT UNIQUE NOT NULL,
-    orjinal_metin     TEXT NOT NULL,
-    cevrilmis_metin   TEXT NOT NULL,
-    sosyal_medya_metni TEXT,
-    kategori          VARCHAR(20) NOT NULL,  -- Startup | Teknoloji | AI | Yazilim
-    skor              REAL NOT NULL DEFAULT 0.0,
-    eklendigi_tarih   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    paylasildi_mi     BOOLEAN NOT NULL DEFAULT FALSE,
-    paylasilma_tarihi TIMESTAMPTZ
-);
-```
-
-> **Not:** Bu şema, ileride FastAPI ile REST API ve admin paneli eklenmesine uygun şekilde tasarlanmıştır.
-
-## 🔧 Hızlı Başlangıç
+## Hızlı başlangıç
 
 ```bash
-# 1. Repoyu klonla
-git clone <repo-url> && cd haberkolesi
-
-# 2. .env dosyasını oluştur
 cp .env.example .env
-# .env dosyasını düzenle ve API anahtarlarını gir
-
-# 3. Docker ile çalıştır
-docker build -t haberkolesi .
-docker run -d \
-  --name haberkolesi \
-  --env-file .env \
-  -v haberkolesi_data:/app/data \
-  --restart unless-stopped \
-  haberkolesi
 ```
 
-Detaylı kurulum için [SETUP.md](SETUP.md) dosyasına bakın.
+`.env` içinde en az şu değerleri değiştirin:
 
-## 📊 Haber Kaynakları
+```dotenv
+GEMINI_API_KEY=your_real_key
+SESSION_SECRET=your_long_random_secret
+ADMIN_PASSWORD=1234
+```
 
-| Kategori | RSS Kaynakları | X Hesapları |
-|----------|---------------|-------------|
-| **Startup** | Swipeline, eGirişim, Foundern, Entrepreneur, Forbes | @Swipeline_tr, @webrazzi, @egirisim, @TechCrunch, @Entrepreneur |
-| **Teknoloji** | DonanimHaber, ShiftDelete, Technopat, The Verge, TechCrunch | @donanimhaber, @shiftdeletenet, @teknoblog, @verge, @WIRED |
-| **AI** | The Rundown, AI News, VentureBeat, MarkTechPost | @turkiyeai, @yapayzekakafasi, @YapayZekaAI_, @AI_TechNews, @VentureBeat |
-| **Yazılım** | Chip, InfoQ, Hacker News | @oncekiyazilimci, @teknoblog, @3rdemayaz, @github, @fireship_dev |
+Docker ile:
 
-## 🛡️ Lisans
+```bash
+docker compose up --build
+```
 
-Bu proje özel kullanım içindir.
+Panel: `http://localhost:8000`
+
+Geliştirme parolası `1234` kullanıldığında panel uyarı gösterir. Canlı ortamda mutlaka değiştirin.
+
+## Panel özellikleri
+
+- RSS taramasını elle başlatma
+- Çekilen haberleri kategori ve duruma göre filtreleme
+- Gemini puanı, gerekçesi, temel gerçekler ve risk işaretleri
+- Orijinal haber ile oluşturulan Devosuit metnini karşılaştırma
+- Metni düzenleme ve onaylama
+- Adayı reddedip sıradaki adayı hazırlama
+- Açık Gemini kuyruk durumu
+- Gelecekteki 10:00–20:00 kategori planı önizlemesi
+
+Onay işlemi yalnız veritabanı durumunu değiştirir. X API çağrısı yapmaz.
+
+## Testler
+
+```bash
+python3 -m venv .venv
+.venv/bin/pip install -r requirements-dev.txt
+.venv/bin/python -m pytest -v
+```
+
+Gerçek PostgreSQL entegrasyon testi için:
+
+```bash
+TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/haberkolesi_test \
+  .venv/bin/python -m pytest tests/test_repositories.py -v
+```
+
+## Gerçek RSS + Gemini smoke testi
+
+Bu komut gerçek API kotası kullanır. `--live` olmadan ağ veya Gemini çağrısı yapılmaz.
+
+```bash
+.venv/bin/python smoke_test.py \
+  --live \
+  --category Girisim \
+  --output data/gemini-smoke-report.md
+```
+
+Rapor; orijinal haber, Gemini puanı, gerekçe, riskler ve yeni Devosuit metnini yan yana gösterir. Görsel veya X gönderisi oluşturmaz.
+
+## Güvenlik notu
+
+Eski `.env.example` içinde gerçek görünümlü bir PostgreSQL parolası bulunuyordu. Örnek dosya temizlendi. Bu parola herhangi bir ortamda kullanılıyorsa döndürülmelidir; eski değer Git geçmişinde kalır.
+
+Detaylı dağıtım bilgisi: [SETUP.md](SETUP.md)
