@@ -6,6 +6,7 @@ Tüm sabitler, haber kaynakları ve çevre değişkenleri burada tanımlanır.
 
 import os
 import logging
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List
 from dotenv import load_dotenv
@@ -16,7 +17,7 @@ load_dotenv()
 # Dizin Yapılandırması
 # ─────────────────────────────────────────────────────────────
 BASE_DIR: Path = Path(__file__).resolve().parent
-DATA_DIR: Path = Path(os.getenv("DATA_DIR", "/app/data"))
+DATA_DIR: Path = Path(os.getenv("DATA_DIR", str(BASE_DIR / "data")))
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 LOG_FILE: Path = DATA_DIR / "app.log"
@@ -69,8 +70,14 @@ DB_MAX_POOL: int = int(os.getenv("DB_MAX_POOL", "10"))
 # Gemini API
 # ─────────────────────────────────────────────────────────────
 GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
-GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
+GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "gemini-3.7-flash")
 GEMINI_MIN_SCORE: float = float(os.getenv("GEMINI_MIN_SCORE", "8.0"))
+GEMINI_MIN_INTERVAL_SECONDS: float = float(
+    os.getenv("GEMINI_MIN_INTERVAL_SECONDS", "15")
+)
+CANDIDATE_LIMIT_PER_CATEGORY: int = int(
+    os.getenv("CANDIDATE_LIMIT_PER_CATEGORY", "5")
+)
 
 GEMINI_SYSTEM_PROMPT: str = """Sen objektif ve tecrübeli bir teknoloji/girişim editörüsün. \
 Sana verilen Türkçe metni 10 üzerinden skorla. Startup, girişimcilik ve yapay zeka \
@@ -204,3 +211,63 @@ TURKISH_DOMAINS: List[str] = [
     "swipeline.co",
     "foundern.com",
 ]
+
+
+def _required_environment(name: str) -> str:
+    value = os.getenv(name, "").strip()
+    if not value:
+        raise ValueError(f"{name} environment variable is required")
+    return value
+
+
+def _environment_bool(name: str, default: bool = False) -> bool:
+    raw_value = os.getenv(name)
+    if raw_value is None:
+        return default
+    normalized = raw_value.strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    raise ValueError(f"{name} must be true or false")
+
+
+@dataclass(frozen=True)
+class Settings:
+    database_url: str
+    gemini_api_key: str
+    admin_password: str
+    session_secret: str
+    gemini_model: str
+    gemini_min_score: float
+    gemini_min_interval_seconds: float
+    candidate_limit_per_category: int
+    cookie_secure: bool
+    data_dir: Path
+
+    @classmethod
+    def from_env(cls) -> "Settings":
+        interval = float(os.getenv("GEMINI_MIN_INTERVAL_SECONDS", "15"))
+        if interval < 15:
+            raise ValueError("GEMINI_MIN_INTERVAL_SECONDS must be at least 15")
+
+        candidate_limit = int(os.getenv("CANDIDATE_LIMIT_PER_CATEGORY", "5"))
+        if candidate_limit < 1:
+            raise ValueError("CANDIDATE_LIMIT_PER_CATEGORY must be at least 1")
+
+        return cls(
+            database_url=_required_environment("DATABASE_URL"),
+            gemini_api_key=_required_environment("GEMINI_API_KEY"),
+            admin_password=_required_environment("ADMIN_PASSWORD"),
+            session_secret=_required_environment("SESSION_SECRET"),
+            gemini_model=os.getenv("GEMINI_MODEL", "gemini-3.7-flash").strip(),
+            gemini_min_score=float(os.getenv("GEMINI_MIN_SCORE", "8.0")),
+            gemini_min_interval_seconds=interval,
+            candidate_limit_per_category=candidate_limit,
+            cookie_secure=_environment_bool("COOKIE_SECURE"),
+            data_dir=Path(os.getenv("DATA_DIR", str(BASE_DIR / "data"))),
+        )
+
+
+def get_settings() -> Settings:
+    return Settings.from_env()
