@@ -79,6 +79,82 @@ CREATE INDEX IF NOT EXISTS idx_haber_paylasilma_tarihi
 
 CREATE INDEX IF NOT EXISTS idx_haber_kaynak_url
     ON haber_havuzu (kaynak_url);
+
+CREATE TABLE IF NOT EXISTS collection_batches (
+    id              BIGSERIAL PRIMARY KEY,
+    state           TEXT NOT NULL CHECK (state IN ('running', 'completed', 'failed')),
+    found_count     INTEGER NOT NULL DEFAULT 0,
+    error_count     INTEGER NOT NULL DEFAULT 0,
+    started_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    completed_at    TIMESTAMPTZ
+);
+
+CREATE TABLE IF NOT EXISTS news_items (
+    id              BIGSERIAL PRIMARY KEY,
+    batch_id        BIGINT NOT NULL REFERENCES collection_batches(id),
+    source_url      TEXT NOT NULL,
+    normalized_url  TEXT UNIQUE NOT NULL,
+    title           TEXT NOT NULL,
+    summary         TEXT NOT NULL DEFAULT '',
+    content         TEXT NOT NULL,
+    source          TEXT NOT NULL,
+    source_category TEXT NOT NULL CHECK (source_category IN ('Girisim', 'AI', 'Teknoloji', 'Yazilim')),
+    published_at    TIMESTAMPTZ,
+    state           TEXT NOT NULL DEFAULT 'collected'
+                    CHECK (state IN ('collected', 'scored', 'drafted', 'approved', 'rejected', 'failed')),
+    score           DOUBLE PRECISION,
+    ai_category     TEXT CHECK (ai_category IN ('Girisim', 'AI', 'Teknoloji', 'Yazilim')),
+    score_reason    TEXT,
+    key_facts       JSONB,
+    risk_flags      JSONB,
+    is_publishable  BOOLEAN,
+    draft_text      TEXT,
+    external_post_id TEXT,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS generation_versions (
+    id              BIGSERIAL PRIMARY KEY,
+    news_id         BIGINT NOT NULL REFERENCES news_items(id) ON DELETE CASCADE,
+    generated_text  TEXT NOT NULL,
+    used_facts      JSONB NOT NULL DEFAULT '[]'::jsonb,
+    model_name      TEXT,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS ai_jobs (
+    id              BIGSERIAL PRIMARY KEY,
+    news_id         BIGINT NOT NULL REFERENCES news_items(id) ON DELETE CASCADE,
+    job_type        TEXT NOT NULL CHECK (job_type IN ('score', 'generate')),
+    state           TEXT NOT NULL DEFAULT 'pending'
+                    CHECK (state IN ('pending', 'running', 'retry', 'completed', 'failed')),
+    attempts        INTEGER NOT NULL DEFAULT 0,
+    next_attempt_at TIMESTAMPTZ,
+    worker_id       TEXT,
+    last_error      TEXT,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_ai_jobs_one_active
+    ON ai_jobs (news_id, job_type)
+    WHERE state IN ('pending', 'running', 'retry');
+
+CREATE INDEX IF NOT EXISTS idx_ai_jobs_claim
+    ON ai_jobs (state, next_attempt_at, id)
+    WHERE state IN ('pending', 'retry');
+
+CREATE INDEX IF NOT EXISTS idx_news_items_ranking
+    ON news_items (ai_category, score DESC)
+    WHERE state = 'scored' AND is_publishable = TRUE;
+
+CREATE TABLE IF NOT EXISTS editor_actions (
+    id              BIGSERIAL PRIMARY KEY,
+    news_id         BIGINT NOT NULL REFERENCES news_items(id) ON DELETE CASCADE,
+    action          TEXT NOT NULL CHECK (action IN ('approve', 'reject', 'edit', 'regenerate')),
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
 """
 
 
