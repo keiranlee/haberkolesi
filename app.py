@@ -1,7 +1,9 @@
 """FastAPI application factory for the Devosuit news review panel."""
 
+from contextlib import asynccontextmanager
+import inspect
 from pathlib import Path
-from typing import Optional
+from typing import Awaitable, Callable, Optional
 
 from fastapi import BackgroundTasks, FastAPI, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -16,8 +18,35 @@ from domain import Category, NewsState
 BASE_DIR = Path(__file__).resolve().parent
 
 
-def create_app(settings, repository, pipeline) -> FastAPI:
-    app = FastAPI(title="Devosuit Haber Paneli")
+def create_app(
+    settings,
+    repository,
+    pipeline,
+    *,
+    worker=None,
+    scheduler=None,
+    close_callback: Optional[Callable[[], Awaitable[None]]] = None,
+) -> FastAPI:
+    @asynccontextmanager
+    async def lifespan(application: FastAPI):
+        del application
+        if worker is not None:
+            worker.start()
+        if scheduler is not None:
+            scheduler.start()
+        try:
+            yield
+        finally:
+            if scheduler is not None:
+                scheduler.shutdown(wait=False)
+            if worker is not None:
+                await worker.stop()
+            if close_callback is not None:
+                result = close_callback()
+                if inspect.isawaitable(result):
+                    await result
+
+    app = FastAPI(title="Devosuit Haber Paneli", lifespan=lifespan)
     templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
     app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
     app.mount("/assets", StaticFiles(directory=str(BASE_DIR / "assets")), name="assets")
@@ -35,6 +64,9 @@ def create_app(settings, repository, pipeline) -> FastAPI:
 
     @app.get("/health")
     async def health():
+        health_check = getattr(repository, "health", None)
+        if health_check is not None:
+            await health_check()
         return {"status": "ok"}
 
     @app.get("/login", response_class=HTMLResponse)

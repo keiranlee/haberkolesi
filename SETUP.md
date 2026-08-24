@@ -1,4 +1,4 @@
-# 🚀 Haber Kölesi — Kurulum ve Dağıtım Rehberi
+# Devosuit Haber Paneli — Kurulum ve Dağıtım Rehberi
 
 Bu belge, Haber Kölesi botunun Docker ile nasıl çalıştırılacağını ve Coolify üzerinde nasıl deploy edileceğini adım adım anlatır.
 
@@ -10,8 +10,7 @@ Bu belge, Haber Kölesi botunun Docker ile nasıl çalıştırılacağını ve C
 - Docker Compose (opsiyonel)
 - PostgreSQL 15+ veritabanı (harici veya Docker'da)
 - Gemini API anahtarı ([Google AI Studio](https://aistudio.google.com/))
-- X (Twitter) hesap bilgileri
-- Threads (Instagram) hesap bilgileri
+- Yönetim paneli parolası ve uzun, rastgele bir oturum anahtarı
 
 ---
 
@@ -29,18 +28,17 @@ cp .env.example .env
 |----------|----------|-------|
 | `DATABASE_URL` | PostgreSQL bağlantı dizesi | `postgres://user:pass@host:5432/havuz` |
 | `GEMINI_API_KEY` | Google Gemini API anahtarı | `AIzaSy...` |
-| `X_USERNAME` | X (Twitter) kullanıcı adı | `haberkolesi` |
-| `X_EMAIL` | X hesap e-postası | `bot@example.com` |
-| `X_PASSWORD` | X hesap şifresi | `********` |
-| `THREADS_USERNAME` | Threads kullanıcı adı | `haberkolesi` |
-| `THREADS_PASSWORD` | Threads şifresi | `********` |
+| `ADMIN_PASSWORD` | Panel giriş parolası | Geliştirmede `1234` |
+| `SESSION_SECRET` | İmzalı oturum anahtarı | Uzun rastgele değer |
 
 ### Opsiyonel Değişkenler
 
 | Değişken | Varsayılan | Açıklama |
 |----------|-----------|----------|
-| `GEMINI_MODEL` | `gemini-1.5-flash` | Kullanılacak Gemini modeli |
+| `GEMINI_MODEL` | `gemini-3.7-flash` | Kullanılacak Gemini modeli |
 | `GEMINI_MIN_SCORE` | `8.0` | Minimum skorlama eşiği |
+| `GEMINI_MIN_INTERVAL_SECONDS` | `15` | Gemini istekleri arasındaki alt sınır |
+| `CANDIDATE_LIMIT_PER_CATEGORY` | `5` | Toplama başına kategori aday sınırı |
 | `DB_MIN_POOL` | `2` | Minimum DB bağlantı sayısı |
 | `DB_MAX_POOL` | `10` | Maksimum DB bağlantı sayısı |
 | `MIN_DELAY` | `2.0` | Minimum gecikme (saniye) |
@@ -67,6 +65,10 @@ docker run -d \
   --restart unless-stopped \
   haberkolesi:latest
 ```
+
+Panel: `http://localhost:8000`
+
+İlk aşamada panel haber toplar, Gemini ile puanlar ve editör metni üretir. Görsel üretimi ve X paylaşımı kapalıdır.
 
 ### 2.3 Docker Compose (Opsiyonel)
 
@@ -124,14 +126,9 @@ Coolify'da uygulama ayarlarından **Persistent Storage** bölümüne gidin:
 
 | Container Yolu | Host Yolu / Volume Adı | Açıklama |
 |----------------|------------------------|----------|
-| `/app/data` | `haberkolesi_data` | Çerez dosyaları, loglar |
+| `/app/data` | `haberkolesi_data` | Loglar ve smoke test raporları |
 
-> ⚠️ **Önemli:** `/app/data` dizini volume olarak bağlanmalıdır. Bu dizin:
-> - `x_cookies.json` — X oturum çerezleri
-> - `threads_session.json` — Threads oturum verisi
-> - `app.log` — Uygulama logları
-> 
-> Volume bağlanmazsa, container yeniden başlatıldığında oturum bilgileri kaybolur ve yeniden giriş gerekir.
+`/app/data` volume olarak bağlanırsa loglar ve manuel test raporları yeniden başlatmalarda korunur. Haberler ve AI iş kuyruğu PostgreSQL'de saklanır.
 
 ### 3.3 Ortam Değişkenleri
 
@@ -170,20 +167,17 @@ docker exec haberkolesi tail -f /app/data/app.log
 # Container içinden
 docker exec -it haberkolesi_db psql -U postgres -d havuz
 
-# Havuz durumu
-SELECT kategori, COUNT(*) as adet, 
-       COUNT(*) FILTER (WHERE paylasildi_mi = TRUE) as paylasildi
-FROM haber_havuzu 
-GROUP BY kategori;
+# Haber ve durum özeti
+SELECT COALESCE(ai_category, source_category) AS kategori,
+       state,
+       COUNT(*) AS adet
+FROM news_items
+GROUP BY COALESCE(ai_category, source_category), state;
 ```
 
-### 4.3 X Oturum Yenileme
+### 4.3 Panel Kontrolü
 
-X (Twitter) oturumu zaman zaman expire olabilir. Bu durumda:
-
-1. Container'daki `/app/data/x_cookies.json` dosyasını silin.
-2. `.env`'de `X_USERNAME`, `X_EMAIL`, `X_PASSWORD` değerlerinin doğru olduğundan emin olun.
-3. Container'ı yeniden başlatın: `docker restart haberkolesi`
+Tarayıcıda `http://sunucu-adresi:8000` adresini açın. Geliştirme parolası `1234` ise panel güvenlik uyarısı gösterir; canlı ortamda `ADMIN_PASSWORD` değerini değiştirin.
 
 ---
 
@@ -193,17 +187,16 @@ X (Twitter) oturumu zaman zaman expire olabilir. Bu durumda:
 |-------|-------|
 | `Veritabanı başlatılamadı` | `DATABASE_URL` değerini kontrol edin, PostgreSQL'in çalıştığından emin olun |
 | `Gemini API hatası` | API anahtarını doğrulayın, kota limitlerini kontrol edin |
-| `X giriş hatası` | Çerez dosyasını silip yeniden başlatın, 2FA kapalı olmalı |
 | `RSS parse hatası` | İlgili sitenin RSS feed URL'sini kontrol edin |
-| `429 Too Many Requests` | Sistem otomatik backoff yapar, `MIN_DELAY`/`MAX_DELAY` artırılabilir |
-| `Threads payla\u015f\u0131m hatas\u0131` | Oturum dosyasını silip yeniden başlatın |
+| `429 Too Many Requests` | Sistem 15 saniyelik istek aralığı ve kalıcı backoff kuyruğunu kullanır |
+| Panel açılmıyor | Container healthcheck ve `docker logs` çıktısını kontrol edin |
 
 ---
 
 ## 6. İleride Yapılacaklar
 
-- [ ] FastAPI ile REST API endpoint'leri
-- [ ] Web admin paneli (React/Vue)
+- [ ] Devosuit haber görseli üretimi
+- [ ] Resmî X API ile onaylı gönderi yayını
 - [ ] Prometheus metrikleri
 - [ ] Telegram bildirim entegrasyonu
-- [ ] Haber deduplikasyonu (semantik benzerlik)
+- [ ] Semantik haber deduplikasyonu

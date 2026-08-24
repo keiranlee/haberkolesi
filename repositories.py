@@ -76,6 +76,9 @@ class MemoryRepository:
     async def count_news(self) -> int:
         return len(self._news)
 
+    async def health(self) -> None:
+        return None
+
     async def get_news(self, news_id: int) -> NewsRecord:
         return deepcopy(self._news[news_id])
 
@@ -352,6 +355,10 @@ class PostgresRepository:
     async def count_news(self) -> int:
         async with self.pool.acquire() as connection:
             return await connection.fetchval("SELECT COUNT(*) FROM news_items")
+
+    async def health(self) -> None:
+        async with self.pool.acquire() as connection:
+            await connection.fetchval("SELECT 1")
 
     async def get_news(self, news_id: int) -> NewsRecord:
         async with self.pool.acquire() as connection:
