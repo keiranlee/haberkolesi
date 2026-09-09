@@ -100,3 +100,7 @@ class NewsPipeline:
         if record.state is not NewsState.DRAFTED:
             raise ValueError("Only a drafted candidate can be regenerated")
         return await self.repository.enqueue_job(record.id, AiJobType.GENERATE)
+
+    async def clear_unready_pool(self) -> int:
+        return await self.repository.clear_unready_news()
+

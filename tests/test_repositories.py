@@ -245,6 +245,35 @@ async def test_disabling_active_score_jobs_leaves_generate_jobs_available():
     assert (await repository.get_job(generate_job.id)).state is AiJobState.PENDING
 
 
+@pytest.mark.asyncio
+async def test_clear_unready_news_preserves_only_items_with_draft_and_image():
+    repository = MemoryRepository()
+    batch_id = await repository.create_batch()
+
+    # 1. Collected only (no draft, no image) -> should be deleted
+    item1 = await repository.insert_news(batch_id, make_news("https://example.com/1"))
+    # 2. Drafted with text AND image -> should be preserved
+    item2 = await repository.insert_news(batch_id, make_news("https://example.com/2"))
+    await repository.save_draft(item2.id, "Hazır taslak metni", ["fact"])
+    await repository.save_image(item2.id, "data/images/2.png")
+    # 3. Drafted with text BUT NO image -> should be deleted
+    item3 = await repository.insert_news(batch_id, make_news("https://example.com/3"))
+    await repository.save_draft(item3.id, "Taslak metin var görsel yok", ["fact"])
+    # 4. Only image BUT NO text -> should be deleted
+    item4 = await repository.insert_news(batch_id, make_news("https://example.com/4"))
+    await repository.save_image(item4.id, "data/images/4.png")
+
+    deleted_count = await repository.clear_unready_news()
+
+    assert deleted_count == 3
+    assert await repository.count_news() == 1
+    preserved = await repository.get_news(item2.id)
+    assert preserved.id == item2.id
+    assert preserved.draft_text == "Hazır taslak metni"
+    assert preserved.image_path == "data/images/2.png"
+
+
+
 @pytest.mark.skipif(
     not os.getenv("TEST_DATABASE_URL"),
     reason="TEST_DATABASE_URL is required for PostgreSQL integration",

@@ -400,3 +400,50 @@ def test_dashboard_lists_ready_copy_and_image_before_collected_candidates():
     assert "Paylaşıma hazır" in html
     assert f'src="/news/{ready_id}/image"' in html
     assert html.index("Generated text") < html.index("Collected candidate")
+
+
+def test_dashboard_renders_clear_pool_form():
+    client, _, _ = make_panel()
+
+    with client:
+        login(client)
+        html = client.get("/").text
+
+    assert 'action="/news/clear-unready"' in html
+    assert "Havuzu Temizle" in html
+
+
+def test_clear_unready_news_endpoint():
+    client, repository, ready_id = make_panel()
+    # ready_id has draft_text from make_panel, add image_path so it is fully ready
+    asyncio.run(repository.save_image(ready_id, "/tmp/ready.png"))
+
+    # Add an unready collected candidate
+    asyncio.run(
+        repository.insert_news(
+            2,
+            RawNews(
+                url="https://source.test/unready",
+                title="Unready candidate",
+                summary="Summary",
+                content="Content",
+                source="Source",
+                source_category=Category.AI,
+                published_at=datetime(2026, 8, 25, tzinfo=timezone.utc),
+            ),
+        )
+    )
+
+    with client:
+        csrf_token = login(client)
+        response = client.post(
+            "/news/clear-unready",
+            data={"csrf_token": csrf_token},
+            follow_redirects=False,
+        )
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/"
+    assert asyncio.run(repository.count_news()) == 1
+    assert asyncio.run(repository.get_news(ready_id)) is not None
+

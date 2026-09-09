@@ -391,6 +391,31 @@ class MemoryRepository:
                     disabled += 1
         return disabled
 
+    async def clear_unready_news(self) -> int:
+        with self._lock:
+            to_delete = [
+                news_id for news_id, record in self._news.items()
+                if not (
+                    record.draft_text
+                    and record.draft_text.strip()
+                    and record.image_path
+                    and record.image_path.strip()
+                )
+            ]
+            for news_id in to_delete:
+                record = self._news.pop(news_id, None)
+                if record and record.normalized_url:
+                    self._news_by_url.pop(record.normalized_url, None)
+                job_ids = [jid for jid, job in self._jobs.items() if job.news_id == news_id]
+                for jid in job_ids:
+                    self._jobs.pop(jid, None)
+                self.generation_versions.pop(news_id, None)
+                self.editor_actions = [ea for ea in self.editor_actions if ea.news_id != news_id]
+                for run in self.content_runs.values():
+                    if run.selected_news_id == news_id:
+                        run.selected_news_id = None
+            return len(to_delete)
+
 
 class PostgresRepository:
     """PostgreSQL implementation used by the running application."""
@@ -976,3 +1001,20 @@ class PostgresRepository:
                 """,
                 reason,
             )
+
+    async def clear_unready_news(self) -> int:
+        async with self.pool.acquire() as connection:
+            return await connection.fetchval(
+                """
+                WITH deleted AS (
+                    DELETE FROM news_items
+                    WHERE draft_text IS NULL
+                       OR TRIM(draft_text) = ''
+                       OR image_path IS NULL
+                       OR TRIM(image_path) = ''
+                    RETURNING 1
+                )
+                SELECT COUNT(*) FROM deleted
+                """
+            )
+

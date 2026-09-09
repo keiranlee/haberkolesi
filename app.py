@@ -266,6 +266,22 @@ def create_app(
             )
         return RedirectResponse(f"/news/{news_id}", status_code=303)
 
+    @app.post("/news/clear-unready")
+    async def clear_unready_news(
+        request: Request,
+        csrf_token: str = Form(""),
+    ):
+        require_admin(request)
+        verify_csrf(request, csrf_token)
+        deleted_count = await pipeline.clear_unready_pool()
+        if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+            return JSONResponse(
+                {"deleted_count": deleted_count, "success": True},
+                status_code=200,
+            )
+        return RedirectResponse("/", status_code=303)
+
+
     @app.get("/ai-jobs/{job_id}")
     async def ai_job_status(request: Request, job_id: int):
         require_admin(request)

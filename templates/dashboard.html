@@ -166,15 +166,24 @@
       <p class="eyebrow">Editör kuyruğu</p>
       <h2 id="news-title">Haber havuzu <span class="counter-badge">{{ records|length }}</span></h2>
     </div>
-    <form class="state-filter" method="get" action="/">
-      {% if selected_category %}<input type="hidden" name="category" value="{{ selected_category.value }}">{% endif %}
-      <label for="state">Durum</label>
-      <select id="state" name="state" onchange="this.form.submit()">
-        <option value="">Tüm durumlar</option>
-        {% for state in states %}<option value="{{ state.value }}" {% if selected_state == state %}selected{% endif %}>{{ state_labels[state] }}</option>{% endfor %}
-      </select>
-      <noscript><button class="button button-secondary" type="submit">Uygula</button></noscript>
-    </form>
+    <div class="news-header-actions">
+      <form class="state-filter" method="get" action="/">
+        {% if selected_category %}<input type="hidden" name="category" value="{{ selected_category.value }}">{% endif %}
+        <label for="state">Durum</label>
+        <select id="state" name="state" onchange="this.form.submit()">
+          <option value="">Tüm durumlar</option>
+          {% for state in states %}<option value="{{ state.value }}" {% if selected_state == state %}selected{% endif %}>{{ state_labels[state] }}</option>{% endfor %}
+        </select>
+        <noscript><button class="button button-secondary" type="submit">Uygula</button></noscript>
+      </form>
+      <form action="/news/clear-unready" method="post" class="clear-pool-form" onsubmit="return confirm('Görseli ve metni henüz oluşturulmamış tüm ham haberler havuzdan silinecektir. Hazır taslaklar korunacaktır. Onaylıyor musunuz?');">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button class="button button-danger-outline button-clear-pool" type="submit" title="Görseli ve metni oluşturulanlar hariç tüm havuzu sil">
+          <svg aria-hidden="true" viewBox="0 0 24 24" width="15" height="15"><path fill="currentColor" d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
+          Havuzu Temizle
+        </button>
+      </form>
+    </div>
   </header>
 
   <form class="filter-chips" method="get" action="/" aria-label="Kategori filtresi">
