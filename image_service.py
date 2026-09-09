@@ -2,6 +2,7 @@
 
 import os
 from pathlib import Path
+import re
 from typing import Optional, Tuple
 from datetime import datetime
 
@@ -78,6 +79,37 @@ def _truncate_lines(lines: list[str], max_lines: int) -> list[str]:
     return retained
 
 
+def _is_english(text: str) -> bool:
+    """Detect if text is predominantly English to prevent English text on Turkish social cards."""
+    if not text:
+        return False
+    # If it contains Turkish-specific characters, it's Turkish
+    if re.search(r"[çğıöşüÇĞİÖŞÜ]", text):
+        return False
+    english_words = {
+        "the", "be", "to", "of", "and", "a", "in", "that", "have", "i",
+        "it", "for", "not", "on", "with", "he", "as", "you", "do", "at",
+        "this", "but", "his", "by", "from", "they", "we", "say", "her",
+        "she", "or", "an", "will", "my", "one", "all", "would", "there",
+        "their", "what", "so", "up", "out", "if", "about", "who", "get",
+        "which", "go", "me", "when", "make", "can", "like", "time", "no",
+        "just", "him", "know", "take", "people", "into", "year", "your",
+        "good", "some", "could", "them", "see", "other", "than", "then",
+        "now", "look", "only", "come", "its", "over", "think", "also",
+        "back", "after", "use", "two", "how", "our", "work", "first",
+        "well", "way", "even", "new", "want", "because", "any", "these",
+        "give", "day", "most", "us", "is", "are", "was", "were", "has",
+        "had", "been", "buyers", "percent", "prefer", "online", "before",
+        "sales", "representative", "market", "business", "company",
+        "data", "indicate", "search", "engine", "making", "page"
+    }
+    words = re.findall(r"[a-z]+", text.lower())
+    if not words:
+        return False
+    matching_en = [w for w in words if w in english_words]
+    return len(matching_en) >= 2 or (len(words) >= 3 and len(matching_en) / len(words) >= 0.25)
+
+
 class ImageService:
     def __init__(self, output_dir: Path, assets_dir: Optional[Path] = None):
         self.output_dir = output_dir / "images"
@@ -151,11 +183,13 @@ class ImageService:
             fill=WHITE,
         )
 
-        # Devosuit News Brand Mark (Top Right)
+        # Devosuit Brand Mark (Top Right)
         brand_font = _get_font(22, bold=True)
-        brand_text = "DEVOSUIT NEWS"
+        brand_text = "DEVOSUIT"
+        brand_bbox = draw.textbbox((0, 0), brand_text, font=brand_font)
+        brand_w = brand_bbox[2] - brand_bbox[0]
         draw.text(
-            (width - 245, 74),
+            (width - 72 - brand_w, 74),
             brand_text,
             font=brand_font,
             fill=(*ORANGE_PRIMARY, 240),
@@ -163,13 +197,15 @@ class ImageService:
 
         # 4. News Headline (Center)
         # Font size adapts based on title length
-        title_font_size = 50 if len(title) <= 80 else (44 if len(title) <= 120 else 38)
+        title_font_size = 52 if len(title) <= 70 else (46 if len(title) <= 110 else 40)
         title_font = _get_font(title_font_size, bold=True)
         title_lines = _wrap_text(title, title_font, max_width=1040, draw=draw)
         title_lines = _truncate_lines(title_lines, 4)
 
         line_height = int(title_font_size * 1.35)
-        title_start_y = 165
+        # Vertically balance the title
+        has_fact = bool(key_fact and not _is_english(key_fact) and len(title_lines) <= 3)
+        title_start_y = 195 if (not has_fact and len(title_lines) <= 2) else 165
 
         for i, line in enumerate(title_lines):
             draw.text(
@@ -181,10 +217,10 @@ class ImageService:
 
         current_y = title_start_y + (len(title_lines) * line_height) + 24
 
-        # 5. Key Fact / Highlight Box (if space permits)
-        if key_fact and len(title_lines) <= 3:
+        # 5. Key Fact / Highlight Box (ONLY if Turkish and space permits)
+        if has_fact:
             fact_font = _get_font(21, bold=False)
-            fact_lines = _wrap_text(f"💡  {key_fact}", fact_font, max_width=980, draw=draw)
+            fact_lines = _wrap_text(f"•  {key_fact}", fact_font, max_width=980, draw=draw)
             fact_lines = _truncate_lines(fact_lines, 2)
             if fact_lines:
                 fact_h = len(fact_lines) * 32 + 24
@@ -211,9 +247,10 @@ class ImageService:
             fill=ORANGE_PRIMARY,
         )
 
+        clean_source = re.sub(r"\s*[\-—–]\s*(?:Latest|RSS|Feed|Son\s*Haberler|En\s*Son).*", "", source, flags=re.I).strip() or source
         footer_font = _get_font(19, bold=False)
         date_str = published_at.strftime("%d.%m.%Y") if published_at else ""
-        source_meta = f"Kaynak: {source}" + (f" · {date_str}" if date_str else "")
+        source_meta = f"Kaynak: {clean_source}" + (f" · {date_str}" if date_str else "")
 
         draw.text(
             (72, height - 85),
@@ -223,7 +260,7 @@ class ImageService:
         )
 
         draw.text(
-            (width - 245, height - 85),
+            (width - 195, height - 85),
             "devosuit.com",
             font=footer_font,
             fill=MUTED_TEXT,
