@@ -1,28 +1,36 @@
 {% extends "base.html" %}
 {% block content %}
-<section id="overview" class="hero-row">
-  <div>
-    <p class="eyebrow">Canlı · Editör masası</p>
+<section id="overview" class="dashboard-hero">
+  <div class="hero-text-side">
+    <div class="hero-badge-row">
+      <span class="eyebrow"><span class="live-dot" aria-hidden="true"></span>Canlı · Editör masası</span>
+      <span class="hero-date">9 Eylül 2026</span>
+    </div>
+    <div id="live-state" data-batch-state="{{ latest_batch.state if latest_batch else 'none' }}" data-running-jobs="{{ job_counts.running }}" data-pending-jobs="{{ job_counts.pending }}" data-total-records="{{ records|length }}" style="display: none;"></div>
     <h1>Gündemi yakala.<br><em>Doğru haberi seç.</em></h1>
-    <p class="hero-description">Kaynakları tara, Gemini değerlendirmesini izle ve güçlü Devosuit metinlerini yayına hazırla.</p>
+    <p class="hero-description">Kaynakları tara, Gemini değerlendirmesini anlık izle ve yayına hazır Devosuit metinlerini oluştur.</p>
   </div>
-  <form action="/collect" method="post" class="collect-form">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    <button class="button button-primary button-collect" type="submit" {% if latest_batch and latest_batch.state == "running" %}disabled{% endif %}>
-      {% if latest_batch and latest_batch.state == "running" %}
-      <span class="spinner" aria-hidden="true"></span>Haberler çekiliyor…
-      {% else %}
-      <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 4V1L8 5l4 4V6a6 6 0 1 1-5.65 4H4.26A8 8 0 1 0 12 4Z"/></svg>Haberleri çek
-      {% endif %}
-    </button>
-    <small>Son 24 saat · kategori başına 5 aday</small>
-  </form>
+  <div class="hero-action-side">
+    <form action="/collect" method="post" class="collect-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button class="button button-primary button-collect" type="submit" {% if latest_batch and latest_batch.state == "running" %}disabled{% endif %}>
+        {% if latest_batch and latest_batch.state == "running" %}
+        <span class="spinner" aria-hidden="true"></span>Haberler çekiliyor…
+        {% else %}
+        <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 4V1L8 5l4 4V6a6 6 0 1 1-5.65 4H4.26A8 8 0 1 0 12 4Z"/></svg>Haberleri çek
+        {% endif %}
+      </button>
+      <small>Son 48 saat · kategori başına 5 aday</small>
+    </form>
+  </div>
 </section>
 
 {% if latest_batch %}
 <section class="collection-status status-{{ latest_batch.state }}" aria-live="polite">
-  <span class="status-symbol">{% if latest_batch.state == "running" %}<span class="spinner"></span>{% elif latest_batch.state == "completed" %}✓{% else %}!{% endif %}</span>
-  <div>
+  <div class="status-symbol">
+    {% if latest_batch.state == "running" %}<span class="spinner"></span>{% elif latest_batch.state == "completed" %}✓{% else %}!{% endif %}
+  </div>
+  <div class="status-content">
     <strong>{% if latest_batch.state == "running" %}Kaynaklar taranıyor{% elif latest_batch.state == "completed" %}Son tarama tamamlandı{% else %}Son taramada sorun oluştu{% endif %}</strong>
     <small>{% if latest_batch.state == "running" %}Sonuçları görmek için durumu güvenli biçimde yenileyebilirsin.{% else %}{{ latest_batch.found_count }} aday bulundu · {{ latest_batch.error_count }} kaynak/çıkarma hatası{% endif %}</small>
   </div>
@@ -33,22 +41,61 @@
 <section class="section-block" aria-labelledby="metrics-title">
   <div class="section-kicker"><span></span><h2 id="metrics-title">Operasyon özeti</h2></div>
   <div class="metrics-grid">
-    <article class="metric-card metric-featured">
-      <div class="metric-icon"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M4 4h16v16H4V4Zm2 2v12h12V6H6Zm2 2h8v2H8V8Zm0 4h8v2H8v-2Zm0 4h5v2H8v-2Z"/></svg></div>
-      <div><span>Toplam haber</span><strong>{{ stats.total_news }}</strong><small>Havuzdaki tüm kayıtlar</small></div>
-      <span class="metric-trend">Canlı</span>
+    <article class="metric-card metric-purple">
+      <div class="metric-header">
+        <div class="metric-icon"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M4 4h16v16H4V4Zm2 2v12h12V6H6Zm2 2h8v2H8V8Zm0 4h8v2H8v-2Zm0 4h5v2H8v-2Z"/></svg></div>
+        <span class="metric-tag">Genel Havuz</span>
+      </div>
+      <div class="metric-body">
+        <span class="metric-label">Toplam haber</span>
+        <strong class="metric-number">{{ stats.total_news }}</strong>
+        <div class="metric-footer">
+          <small>Havuzdaki tüm kayıtlar</small>
+          <span class="metric-trend">Canlı</span>
+        </div>
+      </div>
     </article>
-    <article class="metric-card">
-      <div class="metric-icon icon-purple"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 2a4 4 0 0 1 4 4v1h1a4 4 0 0 1 4 4v2a4 4 0 0 1-4 4h-1v1a4 4 0 0 1-8 0v-1H7a4 4 0 0 1-4-4v-2a4 4 0 0 1 4-4h1V6a4 4 0 0 1 4-4Zm-2 5h4V6a2 2 0 1 0-4 0v1Zm0 10v1a2 2 0 1 0 4 0v-1h-4Zm-3-8a2 2 0 0 0-2 2v2a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-2a2 2 0 0 0-2-2H7Zm2 2h2v2H9v-2Zm4 0h2v2h-2v-2Z"/></svg></div>
-      <div><span>Aktif AI kuyruğu</span><strong>{{ queue_count }}</strong><small>{{ job_counts.running }} iş şu an çalışıyor</small></div>
+
+    <article class="metric-card metric-blue">
+      <div class="metric-header">
+        <div class="metric-icon"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 2a4 4 0 0 1 4 4v1h1a4 4 0 0 1 4 4v2a4 4 0 0 1-4 4h-1v1a4 4 0 0 1-8 0v-1H7a4 4 0 0 1-4-4v-2a4 4 0 0 1 4-4h1V6a4 4 0 0 1 4-4Zm-2 5h4V6a2 2 0 1 0-4 0v1Zm0 10v1a2 2 0 1 0 4 0v-1h-4Zm-3-8a2 2 0 0 0-2 2v2a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-2a2 2 0 0 0-2-2H7Zm2 2h2v2H9v-2Zm4 0h2v2h-2v-2Z"/></svg></div>
+        <span class="metric-tag">Gemini API</span>
+      </div>
+      <div class="metric-body">
+        <span class="metric-label">Aktif AI kuyruğu</span>
+        <strong class="metric-number">{{ queue_count }}</strong>
+        <div class="metric-footer">
+          <small>{{ job_counts.running }} iş şu an çalışıyor</small>
+        </div>
+      </div>
     </article>
-    <article class="metric-card">
-      <div class="metric-icon icon-success"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m9 16.17-3.59-3.58L4 14l5 5L20 8l-1.41-1.41L9 16.17Z"/></svg></div>
-      <div><span>Hazır taslak</span><strong>{{ stats.ready_drafts }}</strong><small>Editör kararını bekliyor</small></div>
+
+    <article class="metric-card metric-lime">
+      <div class="metric-header">
+        <div class="metric-icon"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m9 16.17-3.59-3.58L4 14l5 5L20 8l-1.41-1.41L9 16.17Z"/></svg></div>
+        <span class="metric-tag">Yayına Uygun</span>
+      </div>
+      <div class="metric-body">
+        <span class="metric-label">Hazır taslak</span>
+        <strong class="metric-number">{{ stats.ready_drafts }}</strong>
+        <div class="metric-footer">
+          <small>Editör kararını bekliyor</small>
+        </div>
+      </div>
     </article>
-    <article class="metric-card {% if stats.failed_jobs %}metric-alert{% endif %}">
-      <div class="metric-icon icon-danger"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M11 7h2v6h-2V7Zm0 8h2v2h-2v-2Zm1-13L1 21h22L12 2Zm0 4.1L19.53 19H4.47L12 6.1Z"/></svg></div>
-      <div><span>AI hataları</span><strong>{{ stats.failed_jobs }}</strong><small>{% if stats.failed_jobs %}Gemini erişimini kontrol et{% else %}Sistem normal çalışıyor{% endif %}</small></div>
+
+    <article class="metric-card metric-coral {% if stats.failed_jobs %}metric-alert{% endif %}">
+      <div class="metric-header">
+        <div class="metric-icon"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M11 7h2v6h-2V7Zm0 8h2v2h-2v-2Zm1-13L1 21h22L12 2Zm0 4.1L19.53 19H4.47L12 6.1Z"/></svg></div>
+        <span class="metric-tag">Durum</span>
+      </div>
+      <div class="metric-body">
+        <span class="metric-label">AI hataları</span>
+        <strong class="metric-number">{{ stats.failed_jobs }}</strong>
+        <div class="metric-footer">
+          <small>{% if stats.failed_jobs %}Gemini erişimini kontrol et{% else %}Sistem normal çalışıyor{% endif %}</small>
+        </div>
+      </div>
     </article>
   </div>
 </section>
@@ -56,34 +103,69 @@
 <div class="operations-grid">
   <section id="schedule" class="surface-card schedule-card" aria-labelledby="schedule-title">
     <header class="card-header">
-      <div><p class="eyebrow">Bugünün planı</p><h2 id="schedule-title">Yayın akışı</h2></div>
+      <div>
+        <p class="eyebrow">Bugünün planı</p>
+        <h2 id="schedule-title">Yayın akışı</h2>
+      </div>
       <span class="status-badge status-paused"><span></span>X kapalı</span>
     </header>
+    <p class="card-sub-desc">Günlük otomatik paylaşım saatleri ve odak kategorileri</p>
+    
     <ol class="schedule-timeline">
-      <li><time>10:00</time><span class="category-dot dot-startup"></span><strong>Girişim</strong></li>
-      <li><time>12:00</time><span class="category-dot dot-ai"></span><strong>AI</strong></li>
-      <li><time>14:00</time><span class="category-dot dot-tech"></span><strong>Teknoloji</strong></li>
-      <li><time>16:00</time><span class="category-dot dot-ai"></span><strong>AI</strong></li>
-      <li><time>18:00</time><span class="category-dot dot-code"></span><strong>Yazılım</strong></li>
-      <li><time>20:00</time><span class="category-dot dot-startup"></span><strong>Girişim</strong></li>
+      {% if publishing_slots %}
+        {% for slot in publishing_slots %}
+        {% set slot_state = run_states.get((slot.hour, slot.category), 'pending') %}
+        <li class="slot-{{ slot_state }}"><time>{{ "%02d:00"|format(slot.hour) }}</time><span class="category-dot dot-{{ slot.category.value|lower }}"></span><strong>{% if slot.category.value == "Girisim" %}Girişim{% elif slot.category.value == "Yazilim" %}Yazılım{% else %}{{ slot.category.value }}{% endif %}</strong></li>
+        {% endfor %}
+      {% else %}
+        <li class="slot-pending"><time>10:00</time><span class="category-dot dot-startup"></span><strong>Girişim</strong></li>
+        <li class="slot-pending"><time>12:00</time><span class="category-dot dot-ai"></span><strong>AI</strong></li>
+        <li class="slot-pending"><time>14:00</time><span class="category-dot dot-tech"></span><strong>Teknoloji</strong></li>
+        <li class="slot-pending"><time>16:00</time><span class="category-dot dot-ai"></span><strong>AI</strong></li>
+        <li class="slot-pending"><time>18:00</time><span class="category-dot dot-code"></span><strong>Yazılım</strong></li>
+        <li class="slot-pending"><time>20:00</time><span class="category-dot dot-startup"></span><strong>Girişim</strong></li>
+      {% endif %}
     </ol>
+
+    {% if next_publishing_slot %}
+    <div class="slot-test-row">
+      <form action="/content/test-next-slot" method="post" class="slot-test-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button class="button button-secondary button-slot-test" type="submit">
+          <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 4V1L8 5l4 4V6a6 6 0 1 1-5.65 4H4.26A8 8 0 1 0 12 4Z"/></svg>
+          Sıradaki kategoriyi şimdi test et ({{ next_publishing_slot.category.value }})
+        </button>
+        <small>1 Gemini isteği kullanır</small>
+      </form>
+    </div>
+    {% endif %}
   </section>
 
   <section class="surface-card queue-card" aria-labelledby="queue-title">
-    <header class="card-header"><div><p class="eyebrow">İş kuyruğu</p><h2 id="queue-title">Gemini kuyruğu</h2></div><span class="rate-badge">Sonraki istek · {% if rate_status.next_allowed_at %}{{ rate_status.next_allowed_at|istanbul_datetime }}{% else %}Hazır{% endif %}</span></header>
+    <header class="card-header">
+      <div>
+        <p class="eyebrow">İş kuyruğu</p>
+        <h2 id="queue-title">Gemini kuyruğu</h2>
+      </div>
+      <span class="rate-badge">Sonraki istek · {% if rate_status.next_allowed_at %}{{ rate_status.next_allowed_at|istanbul_datetime }}{% else %}Hazır{% endif %}</span>
+    </header>
+    <p class="card-sub-desc">Google Gemini 3.5 Flash Lite akıllı puanlama ve görsel üretim hattı</p>
     <div class="queue-stats">
-      <div><span class="queue-dot pending"></span><strong>{{ job_counts.pending }}</strong><small>Bekliyor</small></div>
-      <div><span class="queue-dot running"></span><strong>{{ job_counts.running }}</strong><small>Çalışıyor</small></div>
-      <div><span class="queue-dot retry"></span><strong>{{ job_counts.retry }}</strong><small>Tekrar</small></div>
-      <div><span class="queue-dot done"></span><strong>{{ job_counts.completed }}</strong><small>Toplam tamamlanan</small></div>
-      <div><span class="queue-dot error"></span><strong>{{ job_counts.failed }}</strong><small>Toplam hata</small></div>
+      <div class="queue-stat-item"><span class="queue-dot pending"></span><strong>{{ job_counts.pending }}</strong><small>Bekliyor</small></div>
+      <div class="queue-stat-item"><span class="queue-dot running"></span><strong>{{ job_counts.running }}</strong><small>Çalışıyor</small></div>
+      <div class="queue-stat-item"><span class="queue-dot retry"></span><strong>{{ job_counts.retry }}</strong><small>Tekrar</small></div>
+      <div class="queue-stat-item"><span class="queue-dot done"></span><strong>{{ job_counts.completed }}</strong><small>Toplam tamamlanan</small></div>
+      <div class="queue-stat-item"><span class="queue-dot error"></span><strong>{{ job_counts.failed }}</strong><small>Toplam hata</small></div>
     </div>
   </section>
 </div>
 
 <section id="news" class="surface-card news-card" aria-labelledby="news-title">
   <header class="news-header">
-    <div><p class="eyebrow">Editör kuyruğu</p><h2 id="news-title">Haber havuzu <span>{{ records|length }}</span></h2></div>
+    <div class="news-header-left">
+      <p class="eyebrow">Editör kuyruğu</p>
+      <h2 id="news-title">Haber havuzu <span class="counter-badge">{{ records|length }}</span></h2>
+    </div>
     <form class="state-filter" method="get" action="/">
       {% if selected_category %}<input type="hidden" name="category" value="{{ selected_category.value }}">{% endif %}
       <label for="state">Durum</label>
@@ -94,31 +176,103 @@
       <noscript><button class="button button-secondary" type="submit">Uygula</button></noscript>
     </form>
   </header>
+
   <form class="filter-chips" method="get" action="/" aria-label="Kategori filtresi">
     {% if selected_state %}<input type="hidden" name="state" value="{{ selected_state.value }}">{% endif %}
     <button class="filter-chip {% if not selected_category %}is-active{% endif %}" type="submit" name="category" value="">Tümü</button>
     {% for category in categories %}<button class="filter-chip {% if selected_category == category %}is-active{% endif %}" type="submit" name="category" value="{{ category.value }}"><span class="category-dot dot-{{ category.value|lower }}"></span>{{ category.value }}</button>{% endfor %}
   </form>
 
+  <div id="news-container">
+  {% if ready_records %}
+  <section class="ready-records-section">
+    <div class="ready-records-header">
+      <div class="ready-badge-pill">
+        <span class="live-dot"></span>
+        <h3>Paylaşıma hazır</h3>
+      </div>
+      <small>Görseli ve Devosuit metni oluşturulmuş, yayına hazır haberler</small>
+    </div>
+    <div class="ready-cards-grid">
+      {% for ready in ready_records %}
+      <article class="ready-card">
+        <div class="ready-card-visual">
+          <img src="/news/{{ ready.id }}/image" alt="{{ ready.raw.title }}">
+        </div>
+        <div class="ready-card-content">
+          <div class="ready-card-meta">
+            <span class="category-label"><span class="category-dot dot-{{ (ready.ai_category or ready.raw.source_category).value|lower }}"></span>{{ (ready.ai_category or ready.raw.source_category).value }}</span>
+            {% if ready.score is not none %}<span class="score-value">★ {{ "%.1f"|format(ready.score) }}</span>{% endif %}
+          </div>
+          <a class="ready-card-title" href="/news/{{ ready.id }}">{{ ready.raw.title }}</a>
+          <p class="ready-card-text">{{ ready.draft_text }}</p>
+          <div class="ready-card-actions">
+            <a href="/news/{{ ready.id }}" class="button button-primary button-sm">İncele ve Onayla</a>
+            <a href="/news/{{ ready.id }}/image" download class="button button-secondary button-sm">Görseli İndir</a>
+          </div>
+        </div>
+      </article>
+      {% endfor %}
+    </div>
+  </section>
+  {% endif %}
+
   {% if records %}
   <div class="news-table-wrap">
     <table class="news-table">
-      <thead><tr><th scope="col">Haber</th><th scope="col">Kategori</th><th scope="col">AI puanı</th><th scope="col">Durum</th><th scope="col"><span class="sr-only">İşlem</span></th></tr></thead>
+      <thead>
+        <tr>
+          <th scope="col">Haber</th>
+          <th scope="col">Kategori</th>
+          <th scope="col">AI puanı</th>
+          <th scope="col">Durum</th>
+          <th scope="col"><span class="sr-only">İşlem</span></th>
+        </tr>
+      </thead>
       <tbody>
       {% for record in records %}
-        <tr>
-          <td data-label="Haber"><a class="news-title-link" href="/news/{{ record.id }}">{{ record.raw.title }}</a><span class="news-meta">{{ record.raw.source }}{% if record.raw.published_at %} · {{ record.raw.published_at|istanbul_datetime }}{% endif %}</span></td>
-          <td data-label="Kategori"><span class="category-label"><span class="category-dot dot-{{ (record.ai_category or record.raw.source_category).value|lower }}"></span>{{ (record.ai_category or record.raw.source_category).value }}</span></td>
-          <td data-label="AI puanı">{% if record.score is not none %}<span class="score-value">{{ "%.1f"|format(record.score) }}</span><span class="score-track"><span style="width: {{ record.score * 10 }}%"></span></span>{% else %}<span class="score-empty">—</span>{% endif %}</td>
-          <td data-label="Durum"><span class="state-badge state-{{ record.state.value }}"><span></span>{{ state_labels[record.state] }}</span></td>
-          <td data-label="İşlem"><a class="row-action" href="/news/{{ record.id }}" aria-label="{{ record.raw.title }} haberini incele"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6 1.41-1.41L17.83 12l-7.42 7.41L9 18Z"/></svg></a></td>
+        <tr class="news-row">
+          <td data-label="Haber" class="col-title">
+            <a class="news-title-link" href="/news/{{ record.id }}">{{ record.raw.title }}</a>
+            <span class="news-meta">{{ record.raw.source }}{% if record.raw.published_at %} · {{ record.raw.published_at|istanbul_datetime }}{% endif %}</span>
+          </td>
+          <td data-label="Kategori" class="col-category">
+            <span class="category-label"><span class="category-dot dot-{{ (record.ai_category or record.raw.source_category).value|lower }}"></span>{{ (record.ai_category or record.raw.source_category).value }}</span>
+          </td>
+          <td data-label="AI puanı" class="col-score">
+            {% if record.score is not none %}
+            <div class="score-display">
+              <span class="score-value">{{ "%.1f"|format(record.score) }}</span>
+              <span class="score-track"><span style="width: {{ record.score * 10 }}%"></span></span>
+            </div>
+            {% else %}
+            <span class="score-empty">—</span>
+            {% endif %}
+          </td>
+          <td data-label="Durum" class="col-state">
+            <span class="state-badge state-{{ record.state.value }}"><span></span>{{ state_labels[record.state] }}</span>
+          </td>
+          <td data-label="İşlem" class="col-action">
+            <a class="row-action" href="/news/{{ record.id }}" aria-label="{{ record.raw.title }} haberini incele" title="İncele">
+              <svg aria-hidden="true" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6 1.41-1.41L17.83 12l-7.42 7.41L9 18Z"/></svg>
+            </a>
+          </td>
         </tr>
       {% endfor %}
       </tbody>
     </table>
   </div>
   {% else %}
-  <div class="empty-state"><span class="empty-icon"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Zm0 2v14h14V5H5Zm3 3h8v2H8V8Zm0 4h8v2H8v-2Zm0 4h5v2H8v-2Z"/></svg></span><h3>Bu filtrede haber yok</h3><p>Yeni adaylar için kaynakları tekrar tarayabilirsin.</p></div>
+  <div class="empty-state">
+    <span class="empty-icon"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Zm0 2v14h14V5H5Zm3 3h8v2H8V8Zm0 4h8v2H8v-2Zm0 4h5v2H8v-2Z"/></svg></span>
+    <h3>Bu filtrede haber yok</h3>
+    <p>Yeni adaylar için kaynakları tekrar tarayabilir veya farklı bir filtre seçebilirsin.</p>
+  </div>
   {% endif %}
+  </div>
 </section>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', path='/dashboard.js') }}"></script>
 {% endblock %}

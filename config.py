@@ -70,13 +70,13 @@ DB_MAX_POOL: int = int(os.getenv("DB_MAX_POOL", "10"))
 # Gemini API
 # ─────────────────────────────────────────────────────────────
 GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
-GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "gemini-3.7-flash")
+GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite")
 GEMINI_MIN_SCORE: float = float(os.getenv("GEMINI_MIN_SCORE", "8.0"))
 GEMINI_MIN_INTERVAL_SECONDS: float = float(
     os.getenv("GEMINI_MIN_INTERVAL_SECONDS", "15")
 )
 CANDIDATE_LIMIT_PER_CATEGORY: int = int(
-    os.getenv("CANDIDATE_LIMIT_PER_CATEGORY", "5")
+    os.getenv("CANDIDATE_LIMIT_PER_CATEGORY", "3")
 )
 
 GEMINI_SYSTEM_PROMPT: str = """Sen objektif ve tecrübeli bir teknoloji/girişim editörüsün. \
@@ -153,15 +153,15 @@ RSS_FEEDS: Dict[str, List[str]] = {
         "https://techcrunch.com/feed/",
     ],
     "AI": [
-        "https://www.therundown.ai/rss/",
-        "https://www.artificialintelligence-news.com/feed/",
-        "https://venturebeat.com/feed/",
+        "https://techcrunch.com/category/artificial-intelligence/feed/",
         "https://www.marktechpost.com/feed/",
+        "https://www.artificialintelligence-news.com/feed/",
+        "https://news.mit.edu/rss/topic/artificial-intelligence2",
+        "https://arstechnica.com/tag/ai/feed/",
     ],
     "Yazilim": [
-        "https://www.chip.com.tr/rss/",
         "https://feed.infoq.com/",
-        "https://news.ycombinator.com/rss",
+        "https://github.blog/feed/",
     ],
 }
 
@@ -244,6 +244,7 @@ class Settings:
     candidate_limit_per_category: int
     cookie_secure: bool
     data_dir: Path
+    max_news_age_hours: int = 48
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -251,7 +252,7 @@ class Settings:
         if interval < 15:
             raise ValueError("GEMINI_MIN_INTERVAL_SECONDS must be at least 15")
 
-        candidate_limit = int(os.getenv("CANDIDATE_LIMIT_PER_CATEGORY", "5"))
+        candidate_limit = int(os.getenv("CANDIDATE_LIMIT_PER_CATEGORY", "3"))
         if candidate_limit < 1:
             raise ValueError("CANDIDATE_LIMIT_PER_CATEGORY must be at least 1")
 
@@ -260,12 +261,13 @@ class Settings:
             gemini_api_key=_required_environment("GEMINI_API_KEY"),
             admin_password=_required_environment("ADMIN_PASSWORD"),
             session_secret=_required_environment("SESSION_SECRET"),
-            gemini_model=os.getenv("GEMINI_MODEL", "gemini-3.7-flash").strip(),
+            gemini_model=os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite").strip(),
             gemini_min_score=float(os.getenv("GEMINI_MIN_SCORE", "8.0")),
             gemini_min_interval_seconds=interval,
             candidate_limit_per_category=candidate_limit,
             cookie_secure=_environment_bool("COOKIE_SECURE"),
             data_dir=Path(os.getenv("DATA_DIR", str(BASE_DIR / "data"))),
+            max_news_age_hours=int(os.getenv("MAX_NEWS_AGE_HOURS", "48")),
         )
 
 

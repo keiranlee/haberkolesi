@@ -4,7 +4,14 @@ from datetime import datetime, timezone
 
 import pytest
 
-from domain import AiJobState, AiJobType, Category, NewsState, RawNews
+from domain import (
+    AiJobState,
+    AiJobType,
+    Category,
+    ContentRunState,
+    NewsState,
+    RawNews,
+)
 from repositories import MemoryRepository, PostgresRepository
 
 
@@ -183,6 +190,59 @@ async def test_news_listing_can_be_bounded_for_dashboard_rendering():
     records = await repository.list_news(limit=2)
 
     assert len(records) == 2
+
+
+@pytest.mark.asyncio
+async def test_content_run_can_be_claimed_only_once_per_slot_key():
+    repository = MemoryRepository()
+    scheduled_for = datetime(2026, 9, 8, 12, 0, tzinfo=timezone.utc)
+
+    first = await repository.claim_content_run(
+        "2026-09-08T15:AI", scheduled_for, Category.AI
+    )
+    second = await repository.claim_content_run(
+        "2026-09-08T15:AI", scheduled_for, Category.AI
+    )
+
+    assert first is not None
+    assert first.state is ContentRunState.RUNNING
+    assert second is None
+
+
+@pytest.mark.asyncio
+async def test_content_run_completion_records_ready_or_skipped_state():
+    repository = MemoryRepository()
+    scheduled_for = datetime(2026, 9, 8, 12, 0, tzinfo=timezone.utc)
+    ready = await repository.claim_content_run(
+        "2026-09-08T15:AI", scheduled_for, Category.AI
+    )
+    skipped = await repository.claim_content_run(
+        "2026-09-08T17:Teknoloji", scheduled_for, Category.TEKNOLOJI
+    )
+
+    await repository.complete_content_run(ready.id, 42)
+    await repository.complete_content_run(skipped.id, None)
+    runs = await repository.list_content_runs(scheduled_for.date())
+
+    assert [run.state for run in runs] == [
+        ContentRunState.READY,
+        ContentRunState.SKIPPED,
+    ]
+    assert runs[0].selected_news_id == 42
+
+
+@pytest.mark.asyncio
+async def test_disabling_active_score_jobs_leaves_generate_jobs_available():
+    repository = MemoryRepository()
+    news = await repository.insert_news(1, make_news())
+    score_job = await repository.enqueue_job(news.id, AiJobType.SCORE)
+    generate_job = await repository.enqueue_job(news.id, AiJobType.GENERATE)
+
+    disabled = await repository.disable_active_score_jobs("batch flow enabled")
+
+    assert disabled == 1
+    assert (await repository.get_job(score_job.id)).state is AiJobState.FAILED
+    assert (await repository.get_job(generate_job.id)).state is AiJobState.PENDING
 
 
 @pytest.mark.skipif(

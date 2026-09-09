@@ -4,7 +4,7 @@ import asyncio
 from datetime import datetime, timedelta, timezone
 from typing import Callable, Optional
 
-from domain import AiJobType, Category, NewsRecord, NewsState
+from domain import AiJob, AiJobType, Category, NewsRecord, NewsState
 from filtering import select_candidates
 
 
@@ -44,18 +44,17 @@ class NewsPipeline:
                     max_age=self.max_age,
                     per_category=self.per_category,
                 )
-                queued = 0
+                inserted = 0
                 for item in candidates:
                     record = await self.repository.insert_news(batch_id, item)
                     if record.state is NewsState.COLLECTED:
-                        await self.repository.enqueue_job(record.id, AiJobType.SCORE)
-                        queued += 1
+                        inserted += 1
                 await self.repository.finish_batch(
                     batch_id,
                     found_count=len(candidates),
                     error_count=len(result.errors),
                 )
-                return queued
+                return inserted
             except Exception:
                 await self.repository.finish_batch(
                     batch_id,
@@ -92,12 +91,12 @@ class NewsPipeline:
         self,
         news_id: int,
         edited_text: Optional[str] = None,
+        platform_texts=None,
     ) -> None:
-        await self.repository.approve(news_id, edited_text)
+        await self.repository.approve(news_id, edited_text, platform_texts=platform_texts)
 
-    async def regenerate_candidate(self, news_id: int) -> NewsRecord:
+    async def regenerate_candidate(self, news_id: int) -> AiJob:
         record = await self.repository.get_news(news_id)
         if record.state is not NewsState.DRAFTED:
             raise ValueError("Only a drafted candidate can be regenerated")
-        await self.repository.enqueue_job(record.id, AiJobType.GENERATE)
-        return record
+        return await self.repository.enqueue_job(record.id, AiJobType.GENERATE)

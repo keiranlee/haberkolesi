@@ -109,6 +109,7 @@ CREATE TABLE IF NOT EXISTS news_items (
     risk_flags      JSONB,
     is_publishable  BOOLEAN,
     draft_text      TEXT,
+    image_path      TEXT,
     external_post_id TEXT,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -122,6 +123,22 @@ CREATE TABLE IF NOT EXISTS generation_versions (
     model_name      TEXT,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+CREATE TABLE IF NOT EXISTS content_runs (
+    id               BIGSERIAL PRIMARY KEY,
+    slot_key         TEXT UNIQUE NOT NULL,
+    scheduled_for    TIMESTAMPTZ NOT NULL,
+    category         TEXT NOT NULL CHECK (category IN ('Girisim', 'AI', 'Teknoloji', 'Yazilim')),
+    state            TEXT NOT NULL DEFAULT 'running'
+                     CHECK (state IN ('running', 'ready', 'skipped', 'failed')),
+    selected_news_id BIGINT REFERENCES news_items(id) ON DELETE SET NULL,
+    error            TEXT,
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_content_runs_scheduled
+    ON content_runs (scheduled_for DESC);
 
 CREATE TABLE IF NOT EXISTS ai_jobs (
     id              BIGSERIAL PRIMARY KEY,
@@ -137,6 +154,14 @@ CREATE TABLE IF NOT EXISTS ai_jobs (
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE news_items
+    ADD COLUMN IF NOT EXISTS image_path TEXT;
+
+ALTER TABLE news_items
+    ADD COLUMN IF NOT EXISTS platform_texts JSONB;
+ALTER TABLE generation_versions
+    ADD COLUMN IF NOT EXISTS platform_texts JSONB;
 
 ALTER TABLE ai_jobs
     ADD COLUMN IF NOT EXISTS claimed_at TIMESTAMPTZ;

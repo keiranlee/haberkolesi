@@ -1,6 +1,7 @@
 import asyncio
 import re
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
@@ -10,6 +11,7 @@ from collector import CollectionResult
 from domain import Category, RawNews
 from pipeline import NewsPipeline
 from repositories import MemoryRepository
+from schedule import PublishingSlot
 
 
 class EmptyCollector:
@@ -29,7 +31,7 @@ def make_news():
     )
 
 
-def make_panel():
+def make_panel(content_runner=None):
     repository = MemoryRepository()
     record = asyncio.run(repository.insert_news(1, make_news()))
     asyncio.run(repository.save_draft(record.id, "Generated text", ["Fact"]))
@@ -39,7 +41,18 @@ def make_panel():
         session_secret="test-secret-with-enough-length",
         cookie_secure=False,
     )
-    return TestClient(create_app(settings, repository, pipeline)), repository, record.id
+    return (
+        TestClient(
+            create_app(
+                settings,
+                repository,
+                pipeline,
+                content_runner=content_runner,
+            )
+        ),
+        repository,
+        record.id,
+    )
 
 
 def login(client):
@@ -95,6 +108,71 @@ def test_dashboard_shows_queue_filters_and_schedule():
     assert 'name="category"' in html
     assert "10:00" in html
     assert "20:00" in html
+
+
+def test_dashboard_offers_immediate_test_for_the_next_scheduled_category():
+    runner = RecordingContentRunner()
+    client, _, _ = make_panel(content_runner=runner)
+
+    with client:
+        login(client)
+        html = client.get("/").text
+
+    assert 'action="/content/test-next-slot"' in html
+    assert "Sıradaki kategoriyi şimdi test et" in html
+    assert "1 Gemini isteği" in html
+
+
+def test_next_slot_test_route_requires_csrf_and_starts_runner():
+    runner = RecordingContentRunner()
+    client, _, _ = make_panel(content_runner=runner)
+
+    with client:
+        login(client)
+        forbidden = client.post("/content/test-next-slot")
+        csrf_token = login(client)
+        accepted = client.post(
+            "/content/test-next-slot",
+            data={"csrf_token": csrf_token},
+            follow_redirects=False,
+        )
+
+    assert forbidden.status_code == 403
+    assert accepted.status_code == 303
+    assert len(runner.slots) == 1
+    assert isinstance(runner.slots[0], PublishingSlot)
+
+
+def test_manual_test_run_does_not_change_scheduled_timeline_state():
+    client, repository, _ = make_panel(content_runner=RecordingContentRunner())
+    local_now = datetime.now(ZoneInfo("Europe/Istanbul")).replace(
+        hour=20, minute=30, second=0, microsecond=0
+    )
+    run = asyncio.run(
+        repository.claim_content_run(
+            "test:manual:Girisim",
+            local_now,
+            Category.GIRISIM,
+        )
+    )
+    asyncio.run(repository.complete_content_run(run.id, None))
+
+    with client:
+        login(client)
+        html = client.get("/").text
+
+    assert re.search(
+        r'<li class="slot-pending"><time>20:00</time>.*?<strong>Girişim</strong>',
+        html,
+    )
+
+
+class RecordingContentRunner:
+    def __init__(self):
+        self.slots = []
+
+    async def run_test_slot(self, slot):
+        self.slots.append(slot)
 
 
 def test_detail_shows_original_and_generated_text():
@@ -246,3 +324,79 @@ def test_draft_actions_explain_quota_and_confirm_rejection():
 
     assert "Yeniden üretmek 1 Gemini isteği kullanır" in html
     assert 'onsubmit="return confirm(' in html
+
+
+def test_regenerate_ajax_returns_job_status_without_immediate_page_redirect():
+    client, _, news_id = make_panel()
+
+    with client:
+        csrf_token = login(client)
+        response = client.post(
+            f"/news/{news_id}/regenerate",
+            data={"csrf_token": csrf_token},
+            headers={"X-Requested-With": "XMLHttpRequest"},
+        )
+        payload = response.json()
+        status = client.get(f"/ai-jobs/{payload['job_id']}")
+
+    assert response.status_code == 202
+    assert payload["news_id"] == news_id
+    assert status.status_code == 200
+    assert status.json()["state"] == "pending"
+
+
+def test_detail_loads_regeneration_progress_script():
+    client, _, news_id = make_panel()
+
+    with client:
+        login(client)
+        html = client.get(f"/news/{news_id}").text
+        script = client.get("/static/news_detail.js")
+
+    assert 'class="regenerate-form"' in html
+    assert "/static/news_detail.js" in html
+    assert script.status_code == 200
+    assert "Yeni metin hazırlanıyor" in script.text
+
+
+def test_dashboard_includes_live_update_client_script_and_containers():
+    client, _, _ = make_panel()
+
+    with client:
+        login(client)
+        html = client.get("/").text
+        js = client.get("/static/dashboard.js")
+
+    assert 'id="live-state"' in html
+    assert 'id="news-container"' in html
+    assert "/static/dashboard.js" in html
+    assert js.status_code == 200
+    assert "applyUpdate" in js.text
+    assert "bindCollectForm" in js.text
+
+
+def test_dashboard_lists_ready_copy_and_image_before_collected_candidates():
+    client, repository, ready_id = make_panel()
+    asyncio.run(repository.save_image(ready_id, "/tmp/devosuit-ready.png"))
+    asyncio.run(
+        repository.insert_news(
+            2,
+            RawNews(
+                url="https://source.test/newer-collected",
+                title="Collected candidate",
+                summary="Summary",
+                content="Complete source content.",
+                source="Source",
+                source_category=Category.AI,
+                published_at=datetime(2026, 8, 25, tzinfo=timezone.utc),
+            ),
+        )
+    )
+
+    with client:
+        login(client)
+        html = client.get("/").text
+
+    assert "Paylaşıma hazır" in html
+    assert f'src="/news/{ready_id}/image"' in html
+    assert html.index("Generated text") < html.index("Collected candidate")

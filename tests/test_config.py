@@ -36,9 +36,9 @@ def test_settings_use_safe_gemini_defaults(monkeypatch):
 
     settings = Settings.from_env()
 
-    assert settings.gemini_model == "gemini-3.7-flash"
+    assert settings.gemini_model == "gemini-3.5-flash-lite"
     assert settings.gemini_min_interval_seconds == 15.0
-    assert settings.candidate_limit_per_category == 5
+    assert settings.candidate_limit_per_category == 3
 
 
 def test_settings_reject_request_interval_below_rate_limit(monkeypatch):

@@ -100,6 +100,30 @@ async def test_collect_fetches_independent_feeds_concurrently():
 
 
 @pytest.mark.asyncio
+async def test_collecting_one_category_does_not_fetch_other_category_feeds():
+    http = FakeHttpClient()
+    http.add("https://ai.test/feed", RSS_FIXTURE)
+    http.add(
+        "https://source.test/news",
+        b"<article><p>Long source content.</p></article>",
+    )
+    collector = RssCollector(
+        feeds={
+            Category.AI: ["https://ai.test/feed"],
+            Category.TEKNOLOJI: ["https://tech.test/feed"],
+        },
+        http=http,
+        article_extractor=extract_article,
+    )
+
+    result = await collector.collect(Category.AI)
+
+    assert len(result.items) == 1
+    assert result.items[0].source_category is Category.AI
+    assert http.calls == ["https://ai.test/feed", "https://source.test/news"]
+
+
+@pytest.mark.asyncio
 async def test_one_broken_source_does_not_stop_other_sources():
     http = FakeHttpClient()
     http.fail("https://broken.test/feed", 403)

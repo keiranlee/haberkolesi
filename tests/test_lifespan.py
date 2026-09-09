@@ -69,12 +69,21 @@ def test_lifespan_starts_and_stops_worker_and_scheduler():
     assert scheduler.stopped == 1
 
 
-def test_no_publisher_job_is_registered():
-    repository = MemoryRepository()
-    pipeline = NewsPipeline(repository, EmptyCollector())
+class RecordingContentRunner:
+    async def run_slot(self, slot, scheduled_for=None):
+        del slot, scheduled_for
 
-    scheduler = create_scheduler(pipeline)
+
+def test_scheduler_registers_exactly_the_six_content_slots_without_publisher():
+    scheduler = create_scheduler(RecordingContentRunner())
     ids = {job.id for job in scheduler.get_jobs()}
 
-    assert "collector_job" in ids
+    assert ids == {
+        "content_10_girisim",
+        "content_12_ai",
+        "content_14_teknoloji",
+        "content_16_ai",
+        "content_18_yazilim",
+        "content_20_girisim",
+    }
     assert "publisher_job" not in ids

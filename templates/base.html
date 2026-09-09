@@ -3,8 +3,11 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#11102a">
+  <meta name="theme-color" content="#0c0f14">
   <title>{% block title %}Devosuit Newsroom{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="{{ url_for('static', path='/app.css') }}">
   {% block head %}{% endblock %}
 </head>
@@ -13,45 +16,85 @@
   {% if csrf_token %}
   <div class="app-frame">
     <aside class="sidebar" aria-label="Ana navigasyon">
-      <a class="brand" href="/" aria-label="Devosuit Newsroom ana sayfa">
-        <span class="brand-mark"><img src="{{ url_for('assets', path='/logotek.svg') }}" alt=""></span>
-        <span class="brand-copy"><strong>Devosuit</strong><small>Newsroom</small></span>
-      </a>
+      <div class="sidebar-top">
+        <a class="brand" href="/" aria-label="Devosuit Newsroom ana sayfa">
+          <span class="brand-mark"><img src="{{ url_for('assets', path='/logotek.svg') }}" alt="Devosuit"></span>
+          <span class="brand-copy"><strong>Devosuit</strong><small>Newsroom</small></span>
+        </a>
+      </div>
+
       <nav class="side-nav">
         <a class="nav-item {% if request.url.path == '/' %}is-active{% endif %}" href="/#overview" {% if request.url.path == '/' %}aria-current="page"{% endif %}>
-          <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M4 13h6V4H4v9Zm0 7h6v-5H4v5Zm10 0h6v-9h-6v9Zm0-16v5h6V4h-6Z"/></svg><span>Genel bakış</span>
+          <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M4 13h6V4H4v9Zm0 7h6v-5H4v5Zm10 0h6v-9h-6v9Zm0-16v5h6V4h-6Z"/></svg>
+          <span>Genel bakış</span>
         </a>
         <a class="nav-item {% if request.url.path.startswith('/news/') %}is-active{% endif %}" href="/#news" {% if request.url.path.startswith('/news/') %}aria-current="page"{% endif %}>
-          <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M6 3h11a3 3 0 0 1 3 3v15H6a4 4 0 0 1-4-4V7a4 4 0 0 1 4-4Zm0 16h12V6a1 1 0 0 0-1-1H6a2 2 0 0 0-2 2v10.54A3.98 3.98 0 0 1 6 17h9v-2H6a2 2 0 1 0 0 4Zm1-11h8v2H7V8Zm0 4h6v2H7v-2Z"/></svg><span>Haber havuzu</span>
+          <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M6 3h11a3 3 0 0 1 3 3v15H6a4 4 0 0 1-4-4V7a4 4 0 0 1 4-4Zm0 16h12V6a1 1 0 0 0-1-1H6a2 2 0 0 0-2 2v10.54A3.98 3.98 0 0 1 6 17h9v-2H6a2 2 0 1 0 0 4Zm1-11h8v2H7V8Zm0 4h6v2H7v-2Z"/></svg>
+          <span>Haber havuzu</span>
         </a>
         <a class="nav-item" href="/#schedule">
-          <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M7 2h2v2h6V2h2v2h1a3 3 0 0 1 3 3v12a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3V7a3 3 0 0 1 3-3h1V2Zm11 6V7a1 1 0 0 0-1-1v1h-2V6H9v1H7V6H6a1 1 0 0 0-1 1v1h13Zm0 2H5v9a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-9Z"/></svg><span>Yayın akışı</span>
+          <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M7 2h2v2h6V2h2v2h1a3 3 0 0 1 3 3v12a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3V7a3 3 0 0 1 3-3h1V2Zm11 6V7a1 1 0 0 0-1-1v1h-2V6H9v1H7V6H6a1 1 0 0 0-1 1v1h13Zm0 2H5v9a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-9Z"/></svg>
+          <span>Yayın akışı</span>
         </a>
       </nav>
+
       <div class="sidebar-foot">
-        <div class="system-pill"><span class="status-dot"></span><span>Panel aktif</span></div>
-        <div class="phase-note"><span>Faz 01</span><strong>X yayını kapalı</strong></div>
+        <div class="user-profile-card">
+          <div class="user-avatar">
+            <span>ED</span>
+          </div>
+          <div class="user-info">
+            <strong>Editör Masası</strong>
+            <small>Devosuit Admin</small>
+          </div>
+          <form action="/logout" method="post" class="logout-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button class="icon-button-logout" type="submit" aria-label="Çıkış yap" title="Çıkış yap">
+              <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M10 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h5v-2H5V5h5V3Zm4.59 4.59L16 6.17 21.83 12 16 17.83l-1.41-1.42L18 13H9v-2h9l-3.41-3.41Z"/></svg>
+            </button>
+          </form>
+        </div>
+
+        <div class="sidebar-status-group">
+          <div class="system-pill"><span class="status-dot"></span><span>Panel aktif</span></div>
+          <div class="phase-note"><span>Faz 01</span><strong>X yayını kapalı</strong></div>
+        </div>
       </div>
     </aside>
+
     <div class="app-stage">
       <header class="command-bar">
-        <div class="command-context"><span class="mobile-brand">Devosuit Newsroom</span><span class="desktop-context">Editör operasyon merkezi</span></div>
+        <div class="command-context">
+          <span class="mobile-brand">Devosuit Newsroom</span>
+          <div class="desktop-breadcrumb-context">
+            <span class="desktop-context">Editör operasyon merkezi</span>
+            <span class="today-date-badge">Canlı Takip</span>
+          </div>
+        </div>
         <div class="command-actions">
-          <span class="live-chip"><span class="status-dot"></span> Sistem çevrimiçi</span>
-          <form action="/logout" method="post">
+          <span class="live-chip"><span class="live-dot" aria-hidden="true"></span> Sistem çevrimiçi</span>
+          <form action="/logout" method="post" class="mobile-logout">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-            <button class="icon-button" type="submit" aria-label="Çıkış yap" title="Çıkış yap"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M10 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h5v-2H5V5h5V3Zm4.59 4.59L16 6.17 21.83 12 16 17.83l-1.41-1.42L18 13H9v-2h9l-3.41-3.41Z"/></svg></button>
+            <button class="icon-button" type="submit" aria-label="Çıkış yap" title="Çıkış yap">
+              <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M10 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h5v-2H5V5h5V3Zm4.59 4.59L16 6.17 21.83 12 16 17.83l-1.41-1.42L18 13H9v-2h9l-3.41-3.41Z"/></svg>
+            </button>
           </form>
         </div>
       </header>
+
       {% if unsafe_password %}
-      <div class="warning" role="alert"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 2 1 21h22L12 2Zm0 4.1L19.53 19H4.47L12 6.1ZM11 10v5h2v-5h-2Zm0 6.5v2h2v-2h-2Z"/></svg>Geliştirme parolası kullanılıyor. Canlıya çıkmadan önce değiştir.</div>
+      <div class="warning" role="alert">
+        <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 2 1 21h22L12 2Zm0 4.1L19.53 19H4.47L12 6.1ZM11 10v5h2v-5h-2Zm0 6.5v2h2v-2h-2Z"/></svg>
+        Geliştirme parolası kullanılıyor. Canlıya çıkmadan önce değiştir.
+      </div>
       {% endif %}
+
       <main id="main-content" class="workspace">{% block content %}{% endblock %}</main>
     </div>
   </div>
   {% else %}
   <main id="main-content" class="auth-shell">{% block auth_content %}{% endblock %}</main>
   {% endif %}
+  {% block scripts %}{% endblock %}
 </body>
 </html>

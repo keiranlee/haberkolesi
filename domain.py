@@ -35,6 +35,13 @@ class AiJobState(str, Enum):
     FAILED = "failed"
 
 
+class ContentRunState(str, Enum):
+    RUNNING = "running"
+    READY = "ready"
+    SKIPPED = "skipped"
+    FAILED = "failed"
+
+
 @dataclass(frozen=True)
 class RawNews:
     url: str
@@ -60,6 +67,8 @@ class NewsRecord:
     risk_flags: Optional[List[str]] = None
     is_publishable: Optional[bool] = None
     draft_text: Optional[str] = None
+    platform_texts: Optional[dict] = None
+    image_path: Optional[str] = None
     external_post_id: Optional[str] = None
 
 
@@ -74,6 +83,17 @@ class AiJob:
     claimed_at: Optional[datetime] = None
     worker_id: Optional[str] = None
     last_error: Optional[str] = None
+
+
+@dataclass
+class ContentRun:
+    id: int
+    slot_key: str
+    scheduled_for: datetime
+    category: Category
+    state: ContentRunState
+    selected_news_id: Optional[int] = None
+    error: Optional[str] = None
 
 
 @dataclass(frozen=True)

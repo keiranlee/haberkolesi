@@ -62,7 +62,7 @@ class HttpError(RuntimeError):
 
 
 @pytest.mark.asyncio
-async def test_collection_enqueues_at_most_five_scores_per_category():
+async def test_manual_collection_stores_news_without_enqueuing_gemini_scores():
     repository = MemoryRepository()
     collector = FakeCollector(
         [make_news(Category.AI, i) for i in range(7)]
@@ -72,8 +72,8 @@ async def test_collection_enqueues_at_most_five_scores_per_category():
 
     await pipeline.start_collection()
 
-    assert await repository.count_jobs(job_type=AiJobType.SCORE, category=Category.AI) == 5
-    assert await repository.count_jobs(job_type=AiJobType.SCORE, category=Category.GIRISIM) == 5
+    assert await repository.count_news() == 10
+    assert await repository.count_jobs(job_type=AiJobType.SCORE) == 0
 
 
 @pytest.mark.asyncio
@@ -159,6 +159,52 @@ async def test_regenerate_requires_an_existing_draft():
 
     with pytest.raises(ValueError, match="drafted"):
         await pipeline.regenerate_candidate(record.id)
+
+
+@pytest.mark.asyncio
+async def test_regenerate_worker_uses_new_editorial_batch_prompt_for_same_news():
+    repository = MemoryRepository()
+    record = await repository.insert_news(1, make_news(Category.AI, 1))
+    await repository.save_score(
+        record.id,
+        ScoreResult(
+            score=8.8,
+            category=Category.AI,
+            reason="İlk puan.",
+            key_facts=["Somut bilgi."],
+            risk_flags=[],
+            is_publishable=True,
+        ),
+    )
+    await repository.save_draft(record.id, "Eski metin", ["Somut bilgi."])
+    job = await repository.enqueue_job(record.id, AiJobType.GENERATE)
+
+    class EditorialGemini:
+        def __init__(self):
+            self.candidates = []
+
+        async def evaluate_candidates(self, candidates):
+            raise AssertionError("batch selection prompt must not be used")
+
+        async def regenerate_content(self, candidate):
+            self.candidates = [candidate]
+            fact = "Somut bilgi."
+            return DraftResult(
+                text="Yeni SEO ve sosyal medya metni.",
+                used_facts=[fact],
+            )
+
+    gemini = EditorialGemini()
+    worker = AiWorker(repository, gemini, worker_id="test", now=lambda: NOW)
+
+    await worker.run_once()
+
+    saved = await repository.get_news(record.id)
+    saved_job = await repository.get_job(job.id)
+    assert [candidate.id for candidate in gemini.candidates] == [record.id]
+    assert saved.draft_text == "Yeni SEO ve sosyal medya metni."
+    assert saved.score == 8.8
+    assert saved_job.state is AiJobState.COMPLETED
 
 
 @pytest.mark.asyncio

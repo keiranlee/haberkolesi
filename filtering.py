@@ -55,7 +55,11 @@ def select_candidates(
         and now - max_age <= item.published_at <= now
     ]
     eligible.sort(
-        key=lambda item: (item.published_at, normalize_url(item.url)),
+        key=lambda item: (
+            item.published_at,
+            len(item.content.strip()),
+            normalize_url(item.url),
+        ),
         reverse=True,
     )
 

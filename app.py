@@ -1,19 +1,22 @@
 """FastAPI application factory for the Devosuit news review panel."""
 
 from contextlib import asynccontextmanager
+from datetime import datetime
 import inspect
+import os
 from pathlib import Path
 from zoneinfo import ZoneInfo
 from typing import Awaitable, Callable, Optional
 
 from fastapi import BackgroundTasks, FastAPI, Form, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
 
 from auth import ensure_csrf_token, require_admin, verify_csrf, verify_password
 from domain import Category, NewsState
+from schedule import PUBLISHING_SLOTS, next_slot
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -42,6 +45,7 @@ def create_app(
     worker=None,
     scheduler=None,
     rate_gate=None,
+    content_runner=None,
     close_callback: Optional[Callable[[], Awaitable[None]]] = None,
 ) -> FastAPI:
     @asynccontextmanager
@@ -133,6 +137,21 @@ def create_app(
         latest_batch = await repository.latest_batch()
         stats = await repository.dashboard_stats()
         stats["failed_jobs"] = job_counts["failed"]
+        today = datetime.now(ISTANBUL_TIMEZONE).date()
+        content_runs = await repository.list_content_runs(today)
+        next_publishing_slot = next_slot(datetime.now(ISTANBUL_TIMEZONE))
+        run_states = {
+            (run.scheduled_for.astimezone(ISTANBUL_TIMEZONE).hour, run.category): run.state.value
+            for run in content_runs
+            if not run.slot_key.startswith("test:")
+        }
+        ready_records = [
+            record
+            for record in records
+            if record.state is NewsState.DRAFTED
+            and record.draft_text
+            and record.image_path
+        ]
         rate_status = (
             rate_gate.status()
             if rate_gate is not None
@@ -153,6 +172,10 @@ def create_app(
                 "stats": stats,
                 "rate_status": rate_status,
                 "latest_batch": latest_batch,
+                "publishing_slots": PUBLISHING_SLOTS,
+                "next_publishing_slot": next_publishing_slot,
+                "run_states": run_states,
+                "ready_records": ready_records,
                 "state_labels": STATE_LABELS,
                 "unsafe_password": settings.admin_password == "1234",
             },
@@ -167,6 +190,20 @@ def create_app(
         require_admin(request)
         verify_csrf(request, csrf_token)
         background_tasks.add_task(pipeline.start_collection)
+        return RedirectResponse("/", status_code=303)
+
+    @app.post("/content/test-next-slot")
+    async def test_next_slot_content(
+        request: Request,
+        background_tasks: BackgroundTasks,
+        csrf_token: str = Form(""),
+    ):
+        require_admin(request)
+        verify_csrf(request, csrf_token)
+        if content_runner is None:
+            raise HTTPException(status_code=503, detail="Content runner unavailable")
+        slot = next_slot(datetime.now(ISTANBUL_TIMEZONE))
+        background_tasks.add_task(content_runner.run_test_slot, slot)
         return RedirectResponse("/", status_code=303)
 
     @app.get("/news/{news_id}")
@@ -186,6 +223,16 @@ def create_app(
                 "unsafe_password": settings.admin_password == "1234",
             },
         )
+
+    @app.get("/news/{news_id}/image")
+    async def news_image(news_id: int):
+        try:
+            record = await repository.get_news(news_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="News not found") from exc
+        if not record.image_path or not os.path.exists(record.image_path):
+            raise HTTPException(status_code=404, detail="Image not found")
+        return FileResponse(record.image_path, media_type="image/png")
 
     @app.post("/news/{news_id}/prepare")
     async def prepare(
@@ -209,10 +256,29 @@ def create_app(
         require_admin(request)
         verify_csrf(request, csrf_token)
         try:
-            await pipeline.regenerate_candidate(news_id)
+            job = await pipeline.regenerate_candidate(news_id)
         except ValueError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
+        if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+            return JSONResponse(
+                {"job_id": job.id, "news_id": news_id},
+                status_code=202,
+            )
         return RedirectResponse(f"/news/{news_id}", status_code=303)
+
+    @app.get("/ai-jobs/{job_id}")
+    async def ai_job_status(request: Request, job_id: int):
+        require_admin(request)
+        try:
+            job = await repository.get_job(job_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="AI job not found") from exc
+        return {
+            "id": job.id,
+            "news_id": job.news_id,
+            "state": job.state.value,
+            "error": job.last_error,
+        }
 
     @app.post("/news/{news_id}/approve")
     async def approve(
@@ -220,11 +286,16 @@ def create_app(
         news_id: int,
         csrf_token: str = Form(""),
         edited_text: Optional[str] = Form(None),
+        threads_text: Optional[str] = Form(None),
+        instagram_text: Optional[str] = Form(None),
     ):
         require_admin(request)
         verify_csrf(request, csrf_token)
         try:
-            await pipeline.approve_candidate(news_id, edited_text)
+            platform_texts = None
+            if threads_text is not None or instagram_text is not None:
+                platform_texts = {"x": edited_text, "threads": threads_text, "instagram": instagram_text}
+            await pipeline.approve_candidate(news_id, edited_text, platform_texts=platform_texts)
         except ValueError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         return RedirectResponse(f"/news/{news_id}", status_code=303)

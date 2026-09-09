@@ -35,10 +35,10 @@ cp .env.example .env
 
 | Değişken | Varsayılan | Açıklama |
 |----------|-----------|----------|
-| `GEMINI_MODEL` | `gemini-3.7-flash` | Kullanılacak Gemini modeli |
+| `GEMINI_MODEL` | `gemini-3.5-flash-lite` | Düşük maliyetli, structured output destekli güncel Gemini modeli |
 | `GEMINI_MIN_SCORE` | `8.0` | Minimum skorlama eşiği |
 | `GEMINI_MIN_INTERVAL_SECONDS` | `15` | Gemini istekleri arasındaki alt sınır |
-| `CANDIDATE_LIMIT_PER_CATEGORY` | `5` | Toplama başına kategori aday sınırı |
+| `CANDIDATE_LIMIT_PER_CATEGORY` | `3` | Tek Gemini çağrısına alınacak azami aday sayısı |
 | `COOKIE_SECURE` | `false` | HTTPS dağıtımında mutlaka `true` olmalı |
 | `DB_MIN_POOL` | `2` | Minimum DB bağlantı sayısı |
 | `DB_MAX_POOL` | `10` | Maksimum DB bağlantı sayısı |
@@ -69,7 +69,11 @@ docker run -d \
 
 Panel: `http://localhost:8000`
 
-İlk aşamada panel haber toplar, Gemini ile puanlar ve editör metni üretir. Görsel üretimi ve X paylaşımı kapalıdır.
+Panel; 10:00–20:00 arasındaki altı yayın diliminde yalnız planlanan kategoriyi tarar, en fazla üç adayı tek Gemini çağrısında değerlendirir ve kazanan için metin ile 1200×675 Devosuit görseli üretir. X, Instagram ve Threads paylaşımı kapalıdır.
+
+X, Threads ve Instagram metinleri tek istekte ayrı hazırlanır. Kaynak linki veya “yazıya göre” kalıpları yerine doğrudan haber dili kullanılır. Sayısal ifadelerin kaynakta bulunması yerel olarak kontrol edilir; görüş ve tahminlerde kesinlik düzeyinin korunması istenir.
+
+Paneldeki **Sıradaki kategoriyi şimdi test et** işlemi, bir sonraki yayın diliminin kategorisini anında tarayıp içerik hazırlar. Bu manuel işlem bir Gemini batch isteği kullanabilir; ayrı `test:` çalışma anahtarı sayesinde planlı görevin çalışmasını engellemez.
 
 ### 2.3 Docker Compose (Opsiyonel)
 
@@ -192,15 +196,15 @@ Tarayıcıda `http://sunucu-adresi:8000` adresini açın. Geliştirme parolası 
 | `Veritabanı başlatılamadı` | `DATABASE_URL` değerini kontrol edin, PostgreSQL'in çalıştığından emin olun |
 | `Gemini API hatası` | API anahtarını doğrulayın, kota limitlerini kontrol edin |
 | `RSS parse hatası` | İlgili sitenin RSS feed URL'sini kontrol edin |
-| `429 Too Many Requests` | Sistem 15 saniyelik istek aralığı ve kalıcı backoff kuyruğunu kullanır |
+| `429 Too Many Requests` | Sistem Gemini'nin bildirdiği bekleme süresini uygular ve dilim isteğini yalnız bir kez tekrarlar; kota/billing durumunu Google AI Studio'dan kontrol edin |
 | Panel açılmıyor | Container healthcheck ve `docker logs` çıktısını kontrol edin |
 
 ---
 
 ## 6. İleride Yapılacaklar
 
-- [ ] Devosuit haber görseli üretimi
 - [ ] Resmî X API ile onaylı gönderi yayını
+- [ ] Instagram ve Threads API ile onaylı gönderi yayını
 - [ ] Prometheus metrikleri
 - [ ] Telegram bildirim entegrasyonu
 - [ ] Semantik haber deduplikasyonu

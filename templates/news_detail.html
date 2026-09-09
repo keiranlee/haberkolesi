@@ -43,12 +43,33 @@
       <div class="insight-block"><h3>Risk kontrolü</h3>{% if record.risk_flags %}<ul class="risk-list">{% for risk in record.risk_flags %}<li><span>!</span>{{ risk }}</li>{% endfor %}</ul>{% else %}<p class="safe-note"><span>✓</span>Risk işareti bulunamadı.</p>{% endif %}</div>
     </section>
 
+    {% if record.image_path %}
+    <section class="surface-card visual-card">
+      <header class="card-header">
+        <div><p class="eyebrow">Devosuit Görseli</p><h2>Haber Görseli</h2></div>
+        <span class="status-badge status-live">Hazır</span>
+      </header>
+      <div class="visual-preview-wrap">
+        <img src="/news/{{ record.id }}/image" alt="Devosuit Haber Görseli" class="visual-preview-img">
+      </div>
+      <div class="visual-actions">
+        <a href="/news/{{ record.id }}/image" target="_blank" download="devosuit-{{ record.id }}.png" class="button button-primary">
+          <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
+          Görseli İndir (1200×675)
+        </a>
+        <a href="/news/{{ record.id }}/image" target="_blank" class="button button-secondary">
+          Tam Boyut Aç
+        </a>
+      </div>
+    </section>
+    {% else %}
     <section class="surface-card visual-placeholder">
       <div class="visual-orbit"><img src="{{ url_for('assets', path='/logotek.svg') }}" alt=""></div>
       <span class="status-badge status-paused">Sonraki faz</span>
       <h2>Görsel sonraki aşamada</h2>
       <p>#201F4B zemin ve turuncu Devosuit kimliğiyle gönderi görseli burada üretilecek.</p>
     </section>
+    {% endif %}
   </aside>
 </div>
 
@@ -61,12 +82,20 @@
   <div class="composer-workspace" aria-label="Haber işlem adımları">
     <form action="/news/{{ record.id }}/approve" method="post" class="composer-form">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <div class="composer-label"><label for="edited_text">Devosuit metni</label><span>En fazla 240 karakter</span></div>
+      <div class="composer-label"><label for="edited_text">X · Devosuit metni</label><span>En fazla 240 karakter</span></div>
       <textarea id="edited_text" name="edited_text" rows="6" maxlength="240">{{ record.draft_text }}</textarea>
+      {% if record.platform_texts and record.platform_texts.get('threads') and record.platform_texts.get('instagram') %}
+      <div class="composer-label"><label for="threads_text">Threads</label><span>En fazla 480 karakter</span></div>
+      <textarea id="threads_text" name="threads_text" rows="6" maxlength="480" required>{{ record.platform_texts.threads }}</textarea>
+      <div class="composer-label"><label for="instagram_text">Instagram</label><span>En fazla 1800 karakter</span></div>
+      <textarea id="instagram_text" name="instagram_text" rows="10" maxlength="1800" required>{{ record.platform_texts.instagram }}</textarea>
+      {% else %}
+      <p class="action-helper">Bu eski taslak yalnız X metni içeriyor. Yeniden üret ile üç platformun metinlerini hazırlayabilirsin.</p>
+      {% endif %}
       <button class="button button-primary" type="submit"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m9 16.17-3.59-3.58L4 14l5 5L20 8l-1.41-1.41L9 16.17Z"/></svg>Metni onayla</button>
     </form>
     <div class="editor-actions">
-      <form action="/news/{{ record.id }}/regenerate" method="post">
+      <form action="/news/{{ record.id }}/regenerate" method="post" class="regenerate-form">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <button class="button button-secondary" type="submit" title="Yeni bir Gemini isteği kullanır"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 4V1L8 5l4 4V6a6 6 0 1 1-5.65 4H4.26A8 8 0 1 0 12 4Z"/></svg>Yeniden üret</button>
       </form>
@@ -75,12 +104,16 @@
         <button class="button button-danger-quiet" type="submit"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m7.76 14.83-1.41-1.42L9.76 10l-3.41-3.41 1.41-1.42L11.17 8.6l3.42-3.42L16 6.59 12.59 10 16 13.41 14.59 14.83l-3.42-3.42-3.41 3.42Z"/></svg>Reddet ve sıradakine geç</button>
       </form>
     </div>
-    <p class="action-helper">Yeniden üretmek 1 Gemini isteği kullanır. Reddetmek bu adayı kapatır ve sıradaki güvenli adayı hazırlar.</p>
+    <p class="action-helper">Yeniden üretmek 1 Gemini isteği kullanır: X, Threads ve Instagram metinleri birlikte hazırlanır. Görsel üç platform için ortaktır.</p>
   </div>
   {% elif record.draft_text %}
   <div class="finalized-draft">
     <span class="state-badge state-{{ record.state.value }}"><span></span>{% if record.state.value == "approved" %}Onaylanmış metin{% else %}Kapatılmış taslak{% endif %}</span>
     <p>{{ record.draft_text }}</p>
+    {% if record.platform_texts %}
+    <h3>Threads</h3><p style="white-space: pre-wrap">{{ record.platform_texts.get('threads', '') }}</p>
+    <h3>Instagram</h3><p style="white-space: pre-wrap">{{ record.platform_texts.get('instagram', '') }}</p>
+    {% endif %}
     <small>Bu kayıt tamamlandığı için düzenleme aksiyonları kapalıdır.</small>
   </div>
   {% elif record.state.value == "scored" %}
@@ -100,3 +133,4 @@
   {% endif %}
 </section>
 {% endblock %}
+{% block scripts %}<script src="{{ url_for('static', path='/news_detail.js') }}"></script>{% endblock %}

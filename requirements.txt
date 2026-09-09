@@ -31,3 +31,6 @@ pydantic>=2.9.0
 
 # Ortam değişkenleri
 python-dotenv>=1.0.0
+
+# Görsel üretimi
+Pillow>=10.0.0

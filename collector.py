@@ -43,7 +43,7 @@ class AioHttpClient:
         self,
         *,
         timeout_seconds: float = 20,
-        max_response_bytes: int = 1_500_000,
+        max_response_bytes: int = 10_000_000,
     ):
         self.timeout_seconds = timeout_seconds
         self.max_response_bytes = max_response_bytes
@@ -57,8 +57,16 @@ class AioHttpClient:
             self._session = aiohttp.ClientSession(
                 timeout=timeout,
                 headers={
-                    "User-Agent": "Mozilla/5.0 (compatible; DevosuitNews/1.0)",
-                    "Accept": "application/rss+xml, application/xml, text/html;q=0.9",
+                    "User-Agent": (
+                        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                        "AppleWebKit/537.36 (KHTML, like Gecko) "
+                        "Chrome/126.0.0.0 Safari/537.36"
+                    ),
+                    "Accept": (
+                        "text/html,application/xhtml+xml,application/xml;q=0.9,"
+                        "application/rss+xml,*/*;q=0.8"
+                    ),
+                    "Accept-Language": "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7",
                 },
             )
         try:
@@ -151,11 +159,16 @@ class RssCollector:
         }
         return {names[name]: list(urls) for name, urls in feeds.items()}
 
-    async def collect(self) -> CollectionResult:
+    async def collect(self, category: Optional[Category] = None) -> CollectionResult:
         result = CollectionResult()
+        feeds = (
+            {category: self.feeds.get(category, [])}
+            if category is not None
+            else self.feeds
+        )
         tasks = [
             self._collect_feed(category, feed_url, result)
-            for category, feed_urls in self.feeds.items()
+            for category, feed_urls in feeds.items()
             for feed_url in feed_urls
         ]
         await asyncio.gather(*tasks)

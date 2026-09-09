@@ -4,7 +4,7 @@ import asyncio
 import json
 import threading
 from copy import deepcopy
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Dict, List, Optional
 
 from domain import (
@@ -12,6 +12,8 @@ from domain import (
     AiJobState,
     AiJobType,
     Category,
+    ContentRun,
+    ContentRunState,
     EditorAction,
     NewsRecord,
     NewsState,
@@ -35,6 +37,9 @@ class MemoryRepository:
         self.batches = {}
         self.editor_actions: List[EditorAction] = []
         self.generation_versions: Dict[int, List[str]] = {}
+        self.content_runs: Dict[int, ContentRun] = {}
+        self._content_run_by_key: Dict[str, int] = {}
+        self._next_content_run_id = 1
 
     async def create_batch(self) -> int:
         batch_id = self._next_batch_id
@@ -144,15 +149,26 @@ class MemoryRepository:
         news_id: int,
         text: str,
         used_facts: List[str],
+        platform_texts=None,
     ) -> None:
         del used_facts
         with self._lock:
             record = self._news[news_id]
             record.draft_text = text
+            record.platform_texts = deepcopy(platform_texts)
             record.state = NewsState.DRAFTED
             self.generation_versions.setdefault(news_id, []).append(text)
 
-    async def approve(self, news_id: int, edited_text: Optional[str] = None) -> None:
+    async def save_image(self, news_id: int, image_path: str) -> None:
+        with self._lock:
+            record = self._news[news_id]
+            record.image_path = image_path
+
+    async def approve(self, news_id: int, edited_text: Optional[str] = None, platform_texts=None) -> None:
+        if platform_texts is not None:
+            from platform_copy import validate_platform_texts
+            platform_texts = validate_platform_texts(platform_texts)
+            edited_text = platform_texts["x"]
         with self._lock:
             record = self._news[news_id]
             if record.state is not NewsState.DRAFTED:
@@ -170,6 +186,10 @@ class MemoryRepository:
                     record.draft_text
                 )
             record.state = NewsState.APPROVED
+            if platform_texts is not None:
+                record.platform_texts = deepcopy(platform_texts)
+            elif record.platform_texts:
+                record.platform_texts["x"] = candidate_text
             self.editor_actions.append(
                 EditorAction(news_id, "approve", datetime.now(timezone.utc))
             )
@@ -305,6 +325,72 @@ class MemoryRepository:
         records.sort(key=lambda record: (record.score or 0, -record.id), reverse=True)
         return deepcopy(records)
 
+    async def claim_content_run(
+        self,
+        slot_key: str,
+        scheduled_for: datetime,
+        category: Category,
+    ) -> Optional[ContentRun]:
+        with self._lock:
+            if slot_key in self._content_run_by_key:
+                return None
+            run = ContentRun(
+                id=self._next_content_run_id,
+                slot_key=slot_key,
+                scheduled_for=scheduled_for,
+                category=category,
+                state=ContentRunState.RUNNING,
+            )
+            self._next_content_run_id += 1
+            self.content_runs[run.id] = run
+            self._content_run_by_key[slot_key] = run.id
+            return deepcopy(run)
+
+    async def complete_content_run(
+        self,
+        run_id: int,
+        selected_news_id: Optional[int],
+    ) -> None:
+        with self._lock:
+            run = self.content_runs[run_id]
+            run.selected_news_id = selected_news_id
+            run.state = (
+                ContentRunState.READY
+                if selected_news_id is not None
+                else ContentRunState.SKIPPED
+            )
+            run.error = None
+
+    async def fail_content_run(self, run_id: int, error: str) -> None:
+        with self._lock:
+            run = self.content_runs[run_id]
+            run.state = ContentRunState.FAILED
+            run.error = error
+
+    async def list_content_runs(self, day: date) -> List[ContentRun]:
+        runs = [
+            run for run in self.content_runs.values()
+            if run.scheduled_for.date() == day
+        ]
+        runs.sort(key=lambda run: (run.scheduled_for, run.id))
+        return deepcopy(runs)
+
+    async def disable_active_score_jobs(self, reason: str) -> int:
+        disabled = 0
+        with self._lock:
+            for job in self._jobs.values():
+                if job.job_type is AiJobType.SCORE and job.state in {
+                    AiJobState.PENDING,
+                    AiJobState.RUNNING,
+                    AiJobState.RETRY,
+                }:
+                    job.state = AiJobState.FAILED
+                    job.last_error = reason
+                    job.worker_id = None
+                    job.claimed_at = None
+                    disabled += 1
+        return disabled
+
 
 class PostgresRepository:
     """PostgreSQL implementation used by the running application."""
@@ -336,6 +422,8 @@ class PostgresRepository:
             risk_flags=PostgresRepository._json_list(row["risk_flags"]),
             is_publishable=row["is_publishable"],
             draft_text=row["draft_text"],
+            platform_texts=(json.loads(row["platform_texts"]) if isinstance(row.get("platform_texts"), str) else row.get("platform_texts")),
+            image_path=row["image_path"] if "image_path" in row else None,
             external_post_id=row["external_post_id"],
         )
 
@@ -359,6 +447,18 @@ class PostgresRepository:
             claimed_at=row["claimed_at"] if "claimed_at" in row else None,
             worker_id=row["worker_id"],
             last_error=row["last_error"],
+        )
+
+    @staticmethod
+    def _content_run_from_row(row) -> ContentRun:
+        return ContentRun(
+            id=row["id"],
+            slot_key=row["slot_key"],
+            scheduled_for=row["scheduled_for"],
+            category=Category(row["category"]),
+            state=ContentRunState(row["state"]),
+            selected_news_id=row["selected_news_id"],
+            error=row["error"],
         )
 
     async def create_batch(self) -> int:
@@ -480,7 +580,7 @@ class PostgresRepository:
             limit_clause = f"LIMIT ${len(values)}"
         async with self.pool.acquire() as connection:
             rows = await connection.fetch(
-                f"SELECT * FROM news_items {where} ORDER BY id DESC {limit_clause}",
+                f"SELECT * FROM news_items {where} ORDER BY published_at DESC NULLS LAST, id DESC {limit_clause}",
                 *values,
             )
         return [self._news_from_row(row) for row in rows]
@@ -521,30 +621,49 @@ class PostgresRepository:
         news_id: int,
         text: str,
         used_facts: List[str],
+        platform_texts=None,
     ) -> None:
         async with self.pool.acquire() as connection:
             async with connection.transaction():
                 await connection.execute(
                     """
                     INSERT INTO generation_versions
-                        (news_id, generated_text, used_facts)
-                    VALUES ($1, $2, $3::jsonb)
+                        (news_id, generated_text, used_facts, platform_texts)
+                    VALUES ($1, $2, $3::jsonb, $4::jsonb)
                     """,
                     news_id,
                     text,
                     json.dumps(used_facts, ensure_ascii=False),
+                    json.dumps(platform_texts, ensure_ascii=False),
                 )
                 await connection.execute(
                     """
                     UPDATE news_items
-                    SET draft_text = $2, state = 'drafted', updated_at = NOW()
+                    SET draft_text = $2, platform_texts = $3::jsonb, state = 'drafted', updated_at = NOW()
                     WHERE id = $1
                     """,
                     news_id,
                     text,
+                    json.dumps(platform_texts, ensure_ascii=False),
                 )
 
-    async def approve(self, news_id: int, edited_text: Optional[str] = None) -> None:
+    async def save_image(self, news_id: int, image_path: str) -> None:
+        async with self.pool.acquire() as connection:
+            await connection.execute(
+                """
+                UPDATE news_items
+                SET image_path = $2, updated_at = NOW()
+                WHERE id = $1
+                """,
+                news_id,
+                image_path,
+            )
+
+    async def approve(self, news_id: int, edited_text: Optional[str] = None, platform_texts=None) -> None:
+        if platform_texts is not None:
+            from platform_copy import validate_platform_texts
+            platform_texts = validate_platform_texts(platform_texts)
+            edited_text = platform_texts["x"]
         record = await self.get_news(news_id)
         if record.state is not NewsState.DRAFTED:
             raise ValueError("Only drafted news can be approved")
@@ -555,29 +674,33 @@ class PostgresRepository:
             raise ValueError("Approved text cannot be empty")
         if len(candidate_text) > 240:
             raise ValueError("Approved text cannot exceed 240 characters")
+        if platform_texts is None and record.platform_texts:
+            platform_texts = {**record.platform_texts, "x": candidate_text}
         async with self.pool.acquire() as connection:
             async with connection.transaction():
                 if edited_text is not None and edited_text.strip():
                     updated_id = await connection.fetchval(
                         """
                         UPDATE news_items
-                        SET draft_text = $2, state = 'approved', updated_at = NOW()
+                        SET draft_text = $2, platform_texts = $3::jsonb, state = 'approved', updated_at = NOW()
                         WHERE id = $1 AND state = 'drafted'
                         RETURNING id
                         """,
                         news_id,
                         edited_text.strip(),
+                        json.dumps(platform_texts, ensure_ascii=False),
                     )
                     if updated_id is None:
                         raise ValueError("Only drafted news can be approved")
                     await connection.execute(
                         """
                         INSERT INTO generation_versions
-                            (news_id, generated_text, used_facts, model_name)
-                        VALUES ($1, $2, '[]'::jsonb, 'editor')
+                            (news_id, generated_text, used_facts, model_name, platform_texts)
+                        VALUES ($1, $2, '[]'::jsonb, 'editor', $3::jsonb)
                         """,
                         news_id,
                         edited_text.strip(),
+                        json.dumps(platform_texts, ensure_ascii=False),
                     )
                     await connection.execute(
                         "INSERT INTO editor_actions (news_id, action) VALUES ($1, 'edit')",
@@ -773,3 +896,83 @@ class PostgresRepository:
                 category.value,
             )
         return [self._news_from_row(row) for row in rows]
+
+    async def claim_content_run(
+        self,
+        slot_key: str,
+        scheduled_for: datetime,
+        category: Category,
+    ) -> Optional[ContentRun]:
+        async with self.pool.acquire() as connection:
+            row = await connection.fetchrow(
+                """
+                INSERT INTO content_runs (slot_key, scheduled_for, category)
+                VALUES ($1, $2, $3)
+                ON CONFLICT (slot_key) DO NOTHING
+                RETURNING *
+                """,
+                slot_key,
+                scheduled_for,
+                category.value,
+            )
+        return self._content_run_from_row(row) if row is not None else None
+
+    async def complete_content_run(
+        self,
+        run_id: int,
+        selected_news_id: Optional[int],
+    ) -> None:
+        state = ContentRunState.READY if selected_news_id is not None else ContentRunState.SKIPPED
+        async with self.pool.acquire() as connection:
+            await connection.execute(
+                """
+                UPDATE content_runs
+                SET state = $2, selected_news_id = $3, error = NULL,
+                    updated_at = NOW()
+                WHERE id = $1
+                """,
+                run_id,
+                state.value,
+                selected_news_id,
+            )
+
+    async def fail_content_run(self, run_id: int, error: str) -> None:
+        async with self.pool.acquire() as connection:
+            await connection.execute(
+                """
+                UPDATE content_runs
+                SET state = 'failed', error = $2, updated_at = NOW()
+                WHERE id = $1
+                """,
+                run_id,
+                error,
+            )
+
+    async def list_content_runs(self, day: date) -> List[ContentRun]:
+        async with self.pool.acquire() as connection:
+            rows = await connection.fetch(
+                """
+                SELECT * FROM content_runs
+                WHERE (scheduled_for AT TIME ZONE 'Europe/Istanbul')::date = $1
+                ORDER BY scheduled_for, id
+                """,
+                day,
+            )
+        return [self._content_run_from_row(row) for row in rows]
+
+    async def disable_active_score_jobs(self, reason: str) -> int:
+        async with self.pool.acquire() as connection:
+            return await connection.fetchval(
+                """
+                WITH disabled AS (
+                    UPDATE ai_jobs
+                    SET state = 'failed', last_error = $1, worker_id = NULL,
+                        claimed_at = NULL, updated_at = NOW()
+                    WHERE job_type = 'score'
+                      AND state IN ('pending', 'running', 'retry')
+                    RETURNING 1
+                )
+                SELECT COUNT(*) FROM disabled
+                """,
+                reason,
+            )

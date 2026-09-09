@@ -15,7 +15,7 @@ from config import (
     GEMINI_MODEL,
     RSS_FEEDS,
 )
-from domain import Category, RawNews
+from domain import Category, NewsRecord, RawNews
 from filtering import select_candidates
 from gemini_service import (
     DraftResult,
@@ -32,6 +32,47 @@ class SmokeResult:
     score: ScoreResult
     draft: DraftResult
     created_at: datetime
+
+
+async def evaluate_smoke_candidates(
+    candidates: List[RawNews],
+    service: GeminiService,
+) -> SmokeResult:
+    records = [
+        NewsRecord(
+            id=index,
+            batch_id=1,
+            raw=news,
+            normalized_url=news.url,
+        )
+        for index, news in enumerate(candidates[:3], start=1)
+    ]
+    if not records:
+        raise RuntimeError("No candidate supplied for Gemini smoke evaluation")
+    editorial = await service.evaluate_candidates(records)
+    if editorial.selected_news_id is None:
+        raise RuntimeError("Gemini found no safe publishable candidate")
+    winner = next(record for record in records if record.id == editorial.selected_news_id)
+    evaluation = next(
+        item for item in editorial.evaluations
+        if item.news_id == editorial.selected_news_id
+    )
+    return SmokeResult(
+        news=winner.raw,
+        score=ScoreResult(
+            score=evaluation.score,
+            category=evaluation.category,
+            reason=evaluation.reason,
+            key_facts=evaluation.key_facts,
+            risk_flags=evaluation.risk_flags,
+            is_publishable=evaluation.is_publishable,
+        ),
+        draft=DraftResult(
+            text=editorial.text,
+            used_facts=editorial.used_facts,
+        ),
+        created_at=datetime.now(timezone.utc),
+    )
 
 
 def render_smoke_report(result: SmokeResult) -> str:
@@ -90,7 +131,7 @@ async def run_live(category: Category, output: Path) -> SmokeResult:
         http=http_client,
     )
     try:
-        collected = await collector.collect()
+        collected = await collector.collect(category)
     finally:
         await http_client.close()
 
@@ -98,7 +139,7 @@ async def run_live(category: Category, output: Path) -> SmokeResult:
         collected.items,
         now=datetime.now(timezone.utc),
         max_age=timedelta(hours=24),
-        per_category=5,
+        per_category=3,
     )
     if not candidates:
         errors = "; ".join(error.message for error in collected.errors[:5])
@@ -111,26 +152,9 @@ async def run_live(category: Category, output: Path) -> SmokeResult:
         model=GEMINI_MODEL,
     )
     try:
-        scored: List[tuple] = []
-        for news in candidates:
-            score = await service.score_news(news)
-            if score.is_publishable and score.score >= GEMINI_MIN_SCORE:
-                scored.append((news, score))
-        if not scored:
-            raise RuntimeError(
-                f"No {category.value} candidate passed score {GEMINI_MIN_SCORE:.1f}"
-            )
-
-        news, score = max(scored, key=lambda pair: pair[1].score)
-        draft = await service.generate_draft(news, score)
+        result = await evaluate_smoke_candidates(candidates, service)
     finally:
         await service.close()
-    result = SmokeResult(
-        news=news,
-        score=score,
-        draft=draft,
-        created_at=datetime.now(timezone.utc),
-    )
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(render_smoke_report(result), encoding="utf-8")
     return result
