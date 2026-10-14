@@ -416,6 +416,27 @@ class MemoryRepository:
                         run.selected_news_id = None
             return len(to_delete)
 
+    async def clear_all_news(self) -> int:
+        with self._lock:
+            count = len(self._news)
+            self._news.clear()
+            self._news_by_url.clear()
+            self._jobs.clear()
+            self.generation_versions.clear()
+            self.editor_actions.clear()
+            for run in self.content_runs.values():
+                run.selected_news_id = None
+            return count
+
+    async def active_jobs_by_news(self) -> Dict[int, str]:
+        with self._lock:
+            return {
+                job.news_id: job.job_type.value
+                for job in self._jobs.values()
+                if job.state in (AiJobState.PENDING, AiJobState.RUNNING, AiJobState.RETRY)
+            }
+
+
 
 class PostgresRepository:
     """PostgreSQL implementation used by the running application."""
@@ -1017,4 +1038,28 @@ class PostgresRepository:
                 SELECT COUNT(*) FROM deleted
                 """
             )
+
+    async def clear_all_news(self) -> int:
+        async with self.pool.acquire() as connection:
+            return await connection.fetchval(
+                """
+                WITH deleted AS (
+                    DELETE FROM news_items
+                    RETURNING 1
+                )
+                SELECT COUNT(*) FROM deleted
+                """
+            )
+
+    async def active_jobs_by_news(self) -> Dict[int, str]:
+        async with self.pool.acquire() as connection:
+            rows = await connection.fetch(
+                """
+                SELECT news_id, job_type FROM ai_jobs
+                WHERE state IN ('pending', 'running', 'retry')
+                """
+            )
+        return {row["news_id"]: row["job_type"] for row in rows}
+
+
 

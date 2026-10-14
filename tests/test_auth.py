@@ -8,8 +8,14 @@ from repositories import MemoryRepository
 
 
 class StubPipeline:
-    async def start_collection(self):
+    async def start_collection(self, category=None):
         return 0
+
+    async def score_candidate(self, news_id):
+        return SimpleNamespace(id=1)
+
+    async def generate_candidate(self, news_id):
+        return SimpleNamespace(id=1)
 
 
 def make_client():

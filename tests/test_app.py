@@ -15,7 +15,7 @@ from schedule import PublishingSlot
 
 
 class EmptyCollector:
-    async def collect(self):
+    async def collect(self, category=None):
         return CollectionResult()
 
 
@@ -68,6 +68,16 @@ def test_state_changing_route_rejects_missing_csrf():
         response = client.post("/collect")
 
     assert response.status_code == 403
+
+
+def test_collect_triggers_background_collection():
+    client, _, _ = make_panel()
+    with client:
+        csrf = login(client)
+        response = client.post("/collect", data={"csrf_token": csrf, "category": "Girisim"}, follow_redirects=False)
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/"
 
 
 def test_approve_changes_state_without_external_publish():
@@ -345,6 +355,46 @@ def test_regenerate_ajax_returns_job_status_without_immediate_page_redirect():
     assert status.json()["state"] == "pending"
 
 
+def test_score_endpoint_enqueues_score_job():
+    client, _, news_id = make_panel()
+
+    with client:
+        csrf_token = login(client)
+        response = client.post(
+            f"/news/{news_id}/score",
+            data={"csrf_token": csrf_token},
+            headers={"X-Requested-With": "XMLHttpRequest"},
+        )
+        payload = response.json()
+        status = client.get(f"/ai-jobs/{payload['job_id']}")
+
+    assert response.status_code == 202
+    assert payload["news_id"] == news_id
+    assert status.status_code == 200
+    assert status.json()["job_type"] == "score"
+    assert status.json()["state"] == "pending"
+
+
+def test_generate_endpoint_enqueues_generate_job():
+    client, _, news_id = make_panel()
+
+    with client:
+        csrf_token = login(client)
+        response = client.post(
+            f"/news/{news_id}/generate",
+            data={"csrf_token": csrf_token},
+            headers={"X-Requested-With": "XMLHttpRequest"},
+        )
+        payload = response.json()
+        status = client.get(f"/ai-jobs/{payload['job_id']}")
+
+    assert response.status_code == 202
+    assert payload["news_id"] == news_id
+    assert status.status_code == 200
+    assert status.json()["job_type"] == "generate"
+    assert status.json()["state"] == "pending"
+
+
 def test_detail_loads_regeneration_progress_script():
     client, _, news_id = make_panel()
 
@@ -410,7 +460,9 @@ def test_dashboard_renders_clear_pool_form():
         html = client.get("/").text
 
     assert 'action="/news/clear-unready"' in html
-    assert "Havuzu Temizle" in html
+    assert 'action="/news/clear-all"' in html
+    assert "Ham Olanları Temizle" in html
+    assert "Tümünü Sıfırla" in html
 
 
 def test_clear_unready_news_endpoint():
@@ -446,4 +498,22 @@ def test_clear_unready_news_endpoint():
     assert response.headers["location"] == "/"
     assert asyncio.run(repository.count_news()) == 1
     assert asyncio.run(repository.get_news(ready_id)) is not None
+
+
+def test_clear_all_news_endpoint():
+    client, repository, ready_id = make_panel()
+    asyncio.run(repository.save_image(ready_id, "/tmp/ready.png"))
+
+    with client:
+        csrf_token = login(client)
+        response = client.post(
+            "/news/clear-all",
+            data={"csrf_token": csrf_token},
+            follow_redirects=False,
+        )
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/"
+    assert asyncio.run(repository.count_news()) == 0
+
 

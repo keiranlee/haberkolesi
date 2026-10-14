@@ -137,6 +137,7 @@ def create_app(
         latest_batch = await repository.latest_batch()
         stats = await repository.dashboard_stats()
         stats["failed_jobs"] = job_counts["failed"]
+        active_jobs = await repository.active_jobs_by_news()
         today = datetime.now(ISTANBUL_TIMEZONE).date()
         content_runs = await repository.list_content_runs(today)
         next_publishing_slot = next_slot(datetime.now(ISTANBUL_TIMEZONE))
@@ -169,6 +170,7 @@ def create_app(
                 "selected_state": state,
                 "queue_count": queue_count,
                 "job_counts": job_counts,
+                "active_jobs": active_jobs,
                 "stats": stats,
                 "rate_status": rate_status,
                 "latest_batch": latest_batch,
@@ -186,10 +188,17 @@ def create_app(
         request: Request,
         background_tasks: BackgroundTasks,
         csrf_token: str = Form(""),
+        category: Optional[str] = Form(None),
     ):
         require_admin(request)
         verify_csrf(request, csrf_token)
-        background_tasks.add_task(pipeline.start_collection)
+        target_category = None
+        if category:
+            try:
+                target_category = Category(category)
+            except ValueError:
+                pass
+        background_tasks.add_task(pipeline.start_collection, target_category)
         return RedirectResponse("/", status_code=303)
 
     @app.post("/content/test-next-slot")
@@ -247,6 +256,44 @@ def create_app(
             raise HTTPException(status_code=409, detail="No safe scored candidate")
         return RedirectResponse(f"/news/{selected.id}", status_code=303)
 
+    @app.post("/news/{news_id}/score")
+    async def score_news_item(
+        request: Request,
+        news_id: int,
+        csrf_token: str = Form(""),
+    ):
+        require_admin(request)
+        verify_csrf(request, csrf_token)
+        try:
+            job = await pipeline.score_candidate(news_id)
+        except (KeyError, ValueError) as exc:
+            raise HTTPException(status_code=404, detail="News not found") from exc
+        if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+            return JSONResponse(
+                {"job_id": job.id, "news_id": news_id},
+                status_code=202,
+            )
+        return RedirectResponse(f"/news/{news_id}", status_code=303)
+
+    @app.post("/news/{news_id}/generate")
+    async def generate_content(
+        request: Request,
+        news_id: int,
+        csrf_token: str = Form(""),
+    ):
+        require_admin(request)
+        verify_csrf(request, csrf_token)
+        try:
+            job = await pipeline.generate_candidate(news_id)
+        except (KeyError, ValueError) as exc:
+            raise HTTPException(status_code=404, detail="News not found") from exc
+        if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+            return JSONResponse(
+                {"job_id": job.id, "news_id": news_id},
+                status_code=202,
+            )
+        return RedirectResponse(f"/news/{news_id}", status_code=303)
+
     @app.post("/news/{news_id}/regenerate")
     async def regenerate(
         request: Request,
@@ -281,6 +328,22 @@ def create_app(
             )
         return RedirectResponse("/", status_code=303)
 
+    @app.post("/news/clear-all")
+    async def clear_all_news(
+        request: Request,
+        csrf_token: str = Form(""),
+    ):
+        require_admin(request)
+        verify_csrf(request, csrf_token)
+        deleted_count = await pipeline.clear_all_pool()
+        if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+            return JSONResponse(
+                {"deleted_count": deleted_count, "success": True},
+                status_code=200,
+            )
+        return RedirectResponse("/", status_code=303)
+
+
 
     @app.get("/ai-jobs/{job_id}")
     async def ai_job_status(request: Request, job_id: int):
@@ -292,6 +355,7 @@ def create_app(
         return {
             "id": job.id,
             "news_id": job.news_id,
+            "job_type": job.job_type.value,
             "state": job.state.value,
             "error": job.last_error,
         }

@@ -272,6 +272,11 @@ async def test_clear_unready_news_preserves_only_items_with_draft_and_image():
     assert preserved.draft_text == "Hazır taslak metni"
     assert preserved.image_path == "data/images/2.png"
 
+    all_deleted = await repository.clear_all_news()
+    assert all_deleted == 1
+    assert await repository.count_news() == 0
+
+
 
 
 @pytest.mark.skipif(

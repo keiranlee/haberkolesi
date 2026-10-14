@@ -72,6 +72,10 @@ class AiWorker:
                         )
                         await self.repository.save_image(news.id, str(image_path))
             else:
+                if not news.key_facts:
+                    score_res = await self.gemini.score_news(news.raw)
+                    await self.repository.save_score(news.id, score_res)
+                    news = await self.repository.get_news(news.id)
                 result = await self.gemini.regenerate_content(news)
                 await self.repository.save_draft(
                     news.id,

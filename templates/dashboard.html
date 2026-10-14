@@ -17,10 +17,10 @@
         {% if latest_batch and latest_batch.state == "running" %}
         <span class="spinner" aria-hidden="true"></span>Haberler çekiliyor…
         {% else %}
-        <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 4V1L8 5l4 4V6a6 6 0 1 1-5.65 4H4.26A8 8 0 1 0 12 4Z"/></svg>Haberleri çek
+        <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 4V1L8 5l4 4V6a6 6 0 1 1-5.65 4H4.26A8 8 0 1 0 12 4Z"/></svg>Sıradaki Haberleri Çek ({{ next_publishing_slot.category.value if next_publishing_slot else "" }})
         {% endif %}
       </button>
-      <small>Son 48 saat · kategori başına 5 aday</small>
+      <small>Sıradaki slot: {{ "%02d:00"|format(next_publishing_slot.hour) if next_publishing_slot else "" }} {{ next_publishing_slot.category.value if next_publishing_slot else "" }} · Sadece bu kategorinin siteleri taranır</small>
     </form>
   </div>
 </section>
@@ -178,9 +178,16 @@
       </form>
       <form action="/news/clear-unready" method="post" class="clear-pool-form" onsubmit="return confirm('Görseli ve metni henüz oluşturulmamış tüm ham haberler havuzdan silinecektir. Hazır taslaklar korunacaktır. Onaylıyor musunuz?');">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-        <button class="button button-danger-outline button-clear-pool" type="submit" title="Görseli ve metni oluşturulanlar hariç tüm havuzu sil">
+        <button class="button button-warning-outline button-clear-unready" type="submit" title="Görseli ve metni oluşturulanlar hariç, sadece işlenmemiş ham haberleri sil">
+          <svg aria-hidden="true" viewBox="0 0 24 24" width="15" height="15"><path fill="currentColor" d="M15 16h4v2h-4zm0-8h7v2h-7zm0 4h6v2h-6zM3 18c0 1.1.9 2 2 2h6c1.1 0 2-.9 2-2V8H3v10zM14 5h-3l-1-1H6L5 5H2v2h12V5z"/></svg>
+          Ham Olanları Temizle
+        </button>
+      </form>
+      <form action="/news/clear-all" method="post" class="clear-pool-form" onsubmit="return confirm('DİKKAT: Hazır taslaklar dahil olmak üzere havuzdaki TÜM haberler kalıcı olarak silinecektir! Bu işlem geri alınamaz. Onaylıyor musunuz?');">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button class="button button-danger-outline button-clear-all" type="submit" title="Hazır taslaklar dahil tüm havuzu sıfırla">
           <svg aria-hidden="true" viewBox="0 0 24 24" width="15" height="15"><path fill="currentColor" d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
-          Havuzu Temizle
+          Tümünü Sıfırla
         </button>
       </form>
     </div>
@@ -254,15 +261,32 @@
               <span class="score-value">{{ "%.1f"|format(record.score) }}</span>
               <span class="score-track"><span style="width: {{ record.score * 10 }}%"></span></span>
             </div>
+            {% elif active_jobs and active_jobs.get(record.id) == "score" %}
+            <span class="score-in-progress" title="Gemini puanlama analizi yapıyor…">
+              <span class="spinner" aria-hidden="true" style="width:11px;height:11px;border-width:1.5px;margin-right:4px;"></span>
+              Puanlanıyor…
+            </span>
             {% else %}
-            <span class="score-empty">—</span>
+            <form action="/news/{{ record.id }}/score" method="post" class="score-form-inline">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <button type="submit" class="button-score-inline" title="Gemini ile Puanla">
+                <svg aria-hidden="true" viewBox="0 0 24 24"><path d="m12 2 1.5 5.5L19 9l-5.5 1.5L12 16l-1.5-5.5L5 9l5.5-1.5L12 2Z"/></svg>
+                Puanla
+              </button>
+            </form>
             {% endif %}
           </td>
           <td data-label="Durum" class="col-state">
+            {% if active_jobs and active_jobs.get(record.id) == "score" %}
+            <span class="state-badge state-running"><span></span>Puanlanıyor</span>
+            {% elif active_jobs and active_jobs.get(record.id) == "generate" %}
+            <span class="state-badge state-running"><span></span>İçerik üretiliyor</span>
+            {% else %}
             <span class="state-badge state-{{ record.state.value }}"><span></span>{{ state_labels[record.state] }}</span>
+            {% endif %}
           </td>
           <td data-label="İşlem" class="col-action">
-            <a class="row-action" href="/news/{{ record.id }}" aria-label="{{ record.raw.title }} haberini incele" title="İncele">
+            <a class="row-action" href="/news/{{ record.id }}" aria-label="{{ record.raw.title }} haberini incele" title="İncele ve Düzenle">
               <svg aria-hidden="true" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6 1.41-1.41L17.83 12l-7.42 7.41L9 18Z"/></svg>
             </a>
           </td>

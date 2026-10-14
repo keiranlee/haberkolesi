@@ -29,7 +29,12 @@ class FakeCollector:
     def __init__(self, items):
         self.result = CollectionResult(items=items)
 
-    async def collect(self):
+    async def collect(self, category=None):
+        if category is not None:
+            return CollectionResult(
+                items=[i for i in self.result.items if i.source_category is category],
+                errors=self.result.errors,
+            )
         return self.result
 
 
@@ -68,12 +73,31 @@ async def test_manual_collection_stores_news_without_enqueuing_gemini_scores():
         [make_news(Category.AI, i) for i in range(7)]
         + [make_news(Category.GIRISIM, i) for i in range(6)]
     )
+    # NOW is 12:00 UTC = 15:00 Istanbul. Next slot is 16:00 -> AI
     pipeline = NewsPipeline(repository, collector, now=lambda: NOW)
 
     await pipeline.start_collection()
 
-    assert await repository.count_news() == 10
+    records = await repository.list_news()
+    assert len(records) == 5
+    assert all(r.raw.source_category is Category.AI for r in records)
     assert await repository.count_jobs(job_type=AiJobType.SCORE) == 0
+
+
+@pytest.mark.asyncio
+async def test_manual_collection_with_explicit_category():
+    repository = MemoryRepository()
+    collector = FakeCollector(
+        [make_news(Category.AI, i) for i in range(7)]
+        + [make_news(Category.GIRISIM, i) for i in range(6)]
+    )
+    pipeline = NewsPipeline(repository, collector, now=lambda: NOW)
+
+    await pipeline.start_collection(Category.GIRISIM)
+
+    records = await repository.list_news()
+    assert len(records) == 5
+    assert all(r.raw.source_category is Category.GIRISIM for r in records)
 
 
 @pytest.mark.asyncio

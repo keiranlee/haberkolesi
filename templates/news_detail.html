@@ -35,8 +35,17 @@
       <header class="card-header"><div><p class="eyebrow">Gemini analizi</p><h2 id="intelligence-title">İçerik istihbaratı</h2></div><span class="spark-icon"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m12 2 1.5 5.5L19 9l-5.5 1.5L12 16l-1.5-5.5L5 9l5.5-1.5L12 2Zm7 12 .8 3.2L23 18l-3.2.8L19 22l-.8-3.2L15 18l3.2-.8L19 14Z"/></svg></span></header>
       <div class="analysis-score-row">
         <div class="score-ring" style="--score: {{ (record.score or 0) * 10 }}"><span>{% if record.score is not none %}{{ "%.1f"|format(record.score) }}{% else %}—{% endif %}</span></div>
-        <div><strong>{% if record.is_publishable %}Yayınlanabilir aday{% elif record.score is none %}Analiz bekleniyor{% else %}Editör incelemesi gerekli{% endif %}</strong><small>{{ record.score_reason or "Gemini puanlama işi henüz tamamlanmadı." }}</small></div>
+        <div><strong>{% if record.is_publishable %}Yayınlanabilir aday{% elif record.score is none %}Puanlama bekliyor{% else %}Editör incelemesi gerekli{% endif %}</strong><small>{{ record.score_reason or "Gemini puanlama işi henüz tamamlanmadı." }}</small></div>
       </div>
+      {% if record.score is none %}
+      <form action="/news/{{ record.id }}/score" method="post" class="score-form" style="margin-top: 14px;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button class="button button-secondary button-sm" type="submit">
+          <svg aria-hidden="true" viewBox="0 0 24 24" style="width:14px;height:14px;fill:currentColor;"><path d="m12 2 1.5 5.5L19 9l-5.5 1.5L12 16l-1.5-5.5L5 9l5.5-1.5L12 2Z"/></svg>
+          Gemini ile Puanla
+        </button>
+      </form>
+      {% endif %}
       {% if record.key_facts %}
       <div class="insight-block"><h3>Temel gerçekler</h3><ul class="fact-list">{% for fact in record.key_facts %}<li><span>✓</span>{{ fact }}</li>{% endfor %}</ul></div>
       {% endif %}
@@ -119,16 +128,40 @@
   {% elif record.state.value == "scored" %}
   <div class="composer-empty">
     <span><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M14.69 2.86 21.14 9.3 9.44 21H3v-6.44L14.69 2.86Zm0 2.83L5 15.39V19h3.61l9.7-9.7-3.62-3.61Z"/></svg></span>
-    <div><h3>Henüz Devosuit metni yok</h3><p>En yüksek puanlı güvenli adayı seçip yayın taslağını hazırlat.</p></div>
-    <form action="/news/{{ record.id }}/prepare" method="post">
+    <div>
+      <h3>Gemini Skoru: {{ "%.1f"|format(record.score) }} / 10</h3>
+      <p>Bu haber için yapay zeka ile sosyal medya metinlerini (X, Threads, Instagram) ve 1200×675 Devosuit görselini üret.</p>
+    </div>
+    <form action="/news/{{ record.id }}/generate" method="post" class="generate-form">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <button class="button button-primary" type="submit">Metin hazırla</button>
+      <button class="button button-primary" type="submit">
+        <svg aria-hidden="true" viewBox="0 0 24 24" style="width:16px;height:16px;fill:currentColor;"><path d="m12 2 1.5 5.5L19 9l-5.5 1.5L12 16l-1.5-5.5L5 9l5.5-1.5L12 2Z"/></svg>
+        Metin ve Görsel Oluştur
+      </button>
     </form>
   </div>
   {% else %}
   <div class="composer-empty">
-    <span><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm1 17.93V18h-2v1.93A8 8 0 0 1 4.07 13H6v-2H4.07A8 8 0 0 1 11 4.07V6h2V4.07A8 8 0 0 1 19.93 11H18v2h1.93A8 8 0 0 1 13 19.93ZM12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8Z"/></svg></span>
-    <div><h3>Gemini değerlendirmesi bekleniyor</h3><p>Puanlama tamamlanınca metin hazırlanabilir.</p></div>
+    <span><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm1 17.93V18h-2v1.93A8 8 0 1 0 12 2Z"/></svg></span>
+    <div>
+      <h3>Henüz puanlanmadı</h3>
+      <p>Puanlama tamamlanınca metin hazırlanabilir. İster önce puanla, ister doğrudan metin ve görseli üret.</p>
+    </div>
+    <div style="display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; margin-top: 10px;">
+      <form action="/news/{{ record.id }}/score" method="post" class="score-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button class="button button-primary" type="submit">
+          <svg aria-hidden="true" viewBox="0 0 24 24" style="width:16px;height:16px;fill:currentColor;"><path d="m12 2 1.5 5.5L19 9l-5.5 1.5L12 16l-1.5-5.5L5 9l5.5-1.5L12 2Z"/></svg>
+          Gemini ile Puanla
+        </button>
+      </form>
+      <form action="/news/{{ record.id }}/generate" method="post" class="generate-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button class="button button-secondary" type="submit">
+          Metin ve Görsel Oluştur
+        </button>
+      </form>
+    </div>
   </div>
   {% endif %}
 </section>

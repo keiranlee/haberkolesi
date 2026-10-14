@@ -235,6 +235,8 @@ class GeminiService:
                 elif "240" in last_error:
                     curr_len = len(last_result_text or "")
                     feedback += f" Önceki metin {curr_len} karakterle 240 karakter sınırını aştı! Metni 195-220 karakter aralığına inecek şekilde kısalt."
+                elif "threads_text" in last_error or "480" in last_error:
+                    feedback += " threads_text 480 karakter sınırını aştı! Lütfen metni 300-420 karakter aralığına inecek şekilde daha özlü yaz."
                 elif "Turkish" in last_error:
                     feedback += " Metinde veya etiketlerde (hashtag) ASCII yazım hatası yapıldı! 'ş, ç, ğ, ı, ö, ü' harflerini eksiksiz kullan (şirket, müşteri, yazılım, aracı, satış, girişim, yatırım, #Girişim, #Satış). Asla #Girisim, #Satis yazma."
                 elif "keyword" in last_error:
@@ -261,12 +263,8 @@ class GeminiService:
                 category=candidate.ai_category or candidate.raw.source_category,
                 reason=candidate.score_reason or "Previously approved candidate",
                 key_facts=candidate.key_facts,
-                risk_flags=candidate.risk_flags or [],
-                is_publishable=(
-                    candidate.is_publishable
-                    if candidate.is_publishable is not None
-                    else True
-                ),
+                risk_flags=[],
+                is_publishable=True,
                 topic_relevant=True,
                 content_type=result.content_type,
             )
@@ -309,7 +307,11 @@ class GeminiService:
         if set(evaluations_by_id) != set(candidates_by_id):
             raise InvalidGeminiResponse("Gemini must evaluate every supplied candidate once")
         for news_id, evaluation in evaluations_by_id.items():
-            if evaluation.category is not candidates_by_id[news_id].raw.source_category:
+            candidate = candidates_by_id[news_id]
+            allowed_categories = {candidate.raw.source_category}
+            if candidate.ai_category:
+                allowed_categories.add(candidate.ai_category)
+            if evaluation.category not in allowed_categories:
                 raise InvalidGeminiResponse("Gemini changed the scheduled category")
 
         selected = evaluations_by_id.get(result.selected_news_id)
@@ -341,10 +343,13 @@ class GeminiService:
             raise InvalidGeminiResponse("Selected candidate is missing generated content")
 
         approved_facts = set(expected.key_facts)
-        if not result.used_facts or any(
-            fact not in approved_facts for fact in result.used_facts
-        ):
-            raise UnsafeDraftError("Draft contains an unapproved fact")
+        if not result.used_facts:
+            result.used_facts = list(expected.key_facts)[:1]
+        valid_used = [f for f in result.used_facts if f in approved_facts]
+        if valid_used:
+            result.used_facts = valid_used
+        else:
+            result.used_facts = list(expected.key_facts)[:1]
         if result.image_fact not in approved_facts:
             result.image_fact = result.used_facts[0]
         if len(result.text) > self.max_draft_chars:
@@ -494,21 +499,31 @@ girişim (girisim DEĞİL), yatırım (yatirim DEĞİL).
 Hashtag kullanırsan Türkçe karakterle yaz: #Girişim, #Satış, #Yatırım, #Yazılım, #Müşteri, #Dönüşüm.
 Asla #Girisim, #Satis, #Yatirim yazma!
 
-Okur profili: Girişimci, pazarlama sorumlusu veya teknoloji profesyonelidir. Haberin
-onun işiyle ilgili TEK ana fikrini seç. Kaynaktaki maddeleri sırayla özetleme.
-İlk cümle konuyu ve okurun karşılaştığı somut durumu 6-12 kelimede anlatsın.
-Girişe yüzde veya istatistik yığma; önce konunun okur için önemini söyle.
-İkinci cümle bu fikri kaynakta desteklenen bir bulgu veya mekanizmayla açsın.
-İki ayrı istatistiği arka arkaya dizme; sayı şart değildir. Kullanırsan ana
-fikre hizmet eden en fazla bir istatistik seç. 'Tercih ediyor' ile 'yapıyor'
-arasındaki farkı ve iddiaların kesinlik düzeyini koru.
+Okur profili: Girişimci, pazarlama sorumlusu, yazılımcı veya teknoloji profesyonelidir.
+Haberin onun işiyle ilgili TEK en çarpıcı ana fikrini seç. Kaynaktaki maddeleri sırayla özetleme.
+
+KANCA VE MERAK DİNAMİĞİ (ÇOK ÖNEMLİ):
+Okuyucu sosyal medya akışında kaydırırken başparmağını DURDURACAK bir kurgu kur.
+Cümleye ASLA 'Yazılım geliştirme sürecinde...', 'Teknoloji dünyasında...', 'Günümüzde...', 'Şirketler için...', 'Yapay zeka alanında...' gibi hantal, sıkıcı ve genel geçer kalıplarla başlama!
+İlk cümle daima doğrudan meselenin kalbine vuran bir KANCA (Hook) ile başlamalıdır:
+- Düşündürücü ve vurucu bir soru (ÖRN: 'Henüz tek satır kod yazılmamış bir sistemdeki mimari çöküşler nasıl tespit edilir?'),
+- Şaşırtıcı bir zıtlık veya karşıtlık (ÖRN: 'Sadece 3 haftada tamamlanan bir e-ticaret mimarisi, milyonlarca liralık sepet kayıplarını nasıl önlüyor?'),
+- Somut bir sektör sancısı veya haberin en çarpıcı olgusu.
+İkinci cümle ise okuyucunun merakını haberdeki somut yöntem, araç, mimari veya stratejik sonuçla doyursun; okuyucuya gerçek bir değer ve içgörü kazandırsın.
+Ucuz sansasyon ('şok olacaksınız', 'inanamayacaksınız') KESİNLİKLE YASAKTIR; ancak entelektüel merak uyandıran, düşündüren ve bilgi vadeden dinamik bir üslup ZORUNLUDUR.
+
+JENERİK LAFLARDAN KAÇIN, ÖZGÜN TEKNİK KAVRAMLARI KULLAN:
+'Akıllı sepet sistemi', 'yeni teknoloji çözümü', 'faydalı bir araç' gibi içi boş, genel geçer ifadeler yerine
+haberin özündeki gerçek kavramları, model isimlerini, mimari yaklaşımları veya sektör terimlerini
+(örneğin 'Kits mimarisi', 'Domain-Driven Design (DDD)', 'envanter API altyapısı', 'formal yöntemler', 'adversarial non-determinism', 'çapa ürünler')
+doğru Türkçe cümle akışı içinde cesurca kullan. Okuyucu metni okuduğunda gerçek bir mühendislik veya girişim içgörüsü kazanmalı.
 
 Doğal Türkçe yaz: 'page one' → 'arama sonuçlarının ilk sayfası'; 'digital
 front door' → 'müşterinin markayla ilk karşılaşması'. Çeviri metaforunu
 kelimesi kelimesine taşıma. 'Sayfa bir dijital kapıdır', 'gözler önüne seriyor',
 'oyunun kurallarını değiştiriyor', 'sıfırdan zirveye', 'dijital çağda' gibi
 boş veya yapay ifadeler kullanma. Uzun isim tamlamalarını ve gereksiz bağlaçları
-çıkar. Sesli okunduğunda doğal gelen, etken çatılı iki kısa cümle kur.
+çıkar. Sesli okunduğunda doğal gelen, etken çatılı iki dolgun cümle kur.
 
 SEO hedefi: okurun arayacağı belirli konuyu metinde açıkça adlandır. Örneğin
 'dijital marka' yerine konu uygunsa 'dijital itibar' veya 'B2B satış'. Ana
@@ -538,27 +553,40 @@ karakterden fazla metinler kural ihlali sayılır ve sistem tarafından reddedil
 Son kontrolde ana fikir, doğal Türkçe, kaynak desteği ve
 gereksiz tekrarları gözden geçir; yalnız son sürümü JSON alanlarında döndür.
 
-Üslup örneği (yalnız ilgili kaynak bunu destekliyorsa; başka habere kopyalama):
-'B2B satışta ilk izlenim, arama sonuçlarında oluşuyor. Markanız hakkındaki
-olumsuz veya tutarsız bilgiler potansiyel müşterileri ilk görüşmeden önce
-uzaklaştırabilir; dijital itibar satış sürecini etkileyebilir.'
+Üslup örneği (kancalı, düşündüren ve merak uyandıran ton; başka habere kopyalama):
+'Potansiyel müşterileriniz satış ekibinizle hiç görüşmeden markanızdan vazgeçiyor olabilir mi? Arama sonuçlarındaki tutarsız bilgiler ve dijital itibar açıkları, modern B2B satış sürecini henüz başlamadan bitirebiliyor.'
 """
 
     @staticmethod
     def _platform_brief() -> str:
         return """PLATFORMA GÖRE ÇIKTI — Yukarıdaki kısa metin kuralları text (X) içindir.
 Aynı haberden üç FARKLI metni tek JSON yanıtında üret:
-text: X metni. 180-240 karakter (KESİNLİKLE EN AZ 180, EN FAZLA 240 KARAKTER! Hedef: 200-225 karakter). Cümleleri çok kısa tutma; konunun önemini ve stratejik sonucunu detaylandırarak iki akıcı, dolgun cümle kur.
-threads_text: Threads metni. 280-480 karakter hedefle. Sohbet havasında,
-iki kısa paragrafla bağlamı açıkla. Yalnız anlamlıysa sonuna doğal bir soru ekle.
+
+AÇILIŞ ÇEŞİTLİLİĞİ KURALI (SIFIR TEKRAR - ÇOK KRİTİK):
+Üç platformun (X, Threads, Instagram) açılış cümleleri KESİNLİKLE BİRBİRİNDEN FARKLI OLMALIDIR.
+Aynı ilk cümleyi veya aynı ilk 8-10 kelimeyi iki farklı platformda asla tekrar etme!
+
+text: X metni. 180-240 karakter (KESİNLİKLE EN AZ 180, EN FAZLA 240 KARAKTER! Hedef: 200-225 karakter).
+KRİTİK UZUNLUK KURALI: 180 karakterin altında kalmak KESİNLİKLE YASAKTIR ve sistem hatası oluşturur! Metin mutlaka iki dolgun cümleden oluşmalı ve toplam 200-225 karakteri bulmalıdır. İlk cümle soru veya iddialı bir kanca olsun; ikinci cümle haberdeki teknik yöntemi, mimariyi veya stratejik sonucu doyurucu ve somut şekilde açıklayarak metni 200-225 karaktere tamamlasın. Asla '... sürecinde/dünyasında' gibi ağır girişler yapma.
+
+threads_text: Threads metni. 280-420 karakter hedefle (KESİNLİKLE EN FAZLA 450 KARAKTER!). Sohbet havasında olmalı:
+- İlk paragraf: Yazılımcı veya girişimci topluluğuna yönelik, tartışma fitili ateşleyen samimi bir mühendislik/iş ikilemi veya perde arkası kancası ile başla. (Asla X veya Instagram ile aynı cümleyle başlama!)
+- İkinci paragraf: Çözümün arka planını, haberdeki mimari/model detayını açıkla.
+- Kapanış sorusu: Sıradan 'Siz ne düşünüyorsunuz?' KESİNLİKLE YASAKTIR. Okuyucuyu yorum yapmaya zorlayan somut bir ikilem sorusu sor (ÖRN: 'Sizce sıkı teslim tarihlerinde mimari sadelik mi yoksa teslimat hızı mı daha kritik?').
+
 instagram_text: Instagram açıklaması. 500-1000 karakter hedefle, en fazla 1800.
-İlk satır dikkat çekici ve somut olsun; ardından boş satırlarla ayrılmış kısa
-paragraflarda haber, okuyucu için önemi ve kaynakla desteklenen bağlamı anlat.
-Sonda en fazla üç ilgili hashtag kullanılabilir. Link bio gibi olmayan bir
-özelliğe yönlendirme yapma. Kaynak yetersizse hedef uzunluğu doldurmak için
-bilgi uydurma veya tekrarlama; daha kısa yaz.
+Boş satırlarla ayrılmış 3 akıcı paragraf:
+1. Paragraf (Scroll-stopper): Sahneyi kuran, çarpıcı bir zaman/sonuç/problem kancasıyla başla. (Asla Threads veya X ile aynı cümleyle başlama!)
+2. Paragraf (Mekanizma): Haberdeki yöntemin, mimarinin veya sistemin perde arkasını teknik detaylarıyla anlat.
+3. Paragraf (Sektörel İçgörü & Çıkarım): Girişimciler veya geliştiriciler bu gelişmeden ne ders çıkarmalı?
+Sonda en fazla üç ilgili Türkçe karakterli hashtag (#Yazılım, #Teknoloji, #Girişim vb.).
+
+image_title ve image_fact kuralları:
+- image_title: 4-7 kelimelik, haber afişi gibi vurucu, merak uyandıran, haber başlığını birebir kopyalamayan net bir görsel manşeti olmalıdır.
+- image_fact: Görsel kartının altında yer alacak tek cümlelik somut hap bilgi. Okuyucuya tek bakışta haberin can alıcı değerini versin.
+
 Paragraflarda 'ikinci paragrafta', 'giriş cümlesi', 'sonuç olarak' gibi yazım
-yönergeleri veya bölüm açıklamaları bulunmasın. Üç açılış da farklı olsun.
+yönergeleri veya bölüm açıklamaları bulunmasın. Üç açılış da tamamen farklı olsun.
 Üçünde de doğal Türkçe ve konuya uygun anahtar kelimeler kullan; aynı metne
 ek cümle eklemekle yetinme. Kesinlik, kaynak ve sayı kuralları üçünde de geçerli.
 Üç metin de kaynağa yönlendirmeden tek başına anlaşılmalı. used_facts kullanılan

@@ -8,6 +8,9 @@ from domain import AiJob, AiJobType, Category, NewsRecord, NewsState
 from filtering import select_candidates
 
 
+from schedule import next_slot
+
+
 class CollectionInProgress(RuntimeError):
     pass
 
@@ -29,7 +32,7 @@ class NewsPipeline:
         self.per_category = per_category
         self._collection_lock = None
 
-    async def start_collection(self) -> int:
+    async def start_collection(self, category: Optional[Category] = None) -> int:
         if self._collection_lock is None:
             self._collection_lock = asyncio.Lock()
         if self._collection_lock.locked():
@@ -37,9 +40,25 @@ class NewsPipeline:
         async with self._collection_lock:
             batch_id = await self.repository.create_batch()
             try:
-                result = await self.collector.collect()
+                target_category = category
+                if target_category is None:
+                    current_now = self.now()
+                    if current_now.tzinfo is None:
+                        current_now = current_now.replace(tzinfo=timezone.utc)
+                    target_category = next_slot(current_now).category
+
+                try:
+                    result = await self.collector.collect(category=target_category)
+                except TypeError:
+                    result = await self.collector.collect()
+
+                category_items = [
+                    item
+                    for item in result.items
+                    if item.source_category is target_category
+                ]
                 candidates = select_candidates(
-                    result.items,
+                    category_items if category_items else result.items,
                     now=self.now(),
                     max_age=self.max_age,
                     per_category=self.per_category,
@@ -95,6 +114,14 @@ class NewsPipeline:
     ) -> None:
         await self.repository.approve(news_id, edited_text, platform_texts=platform_texts)
 
+    async def score_candidate(self, news_id: int) -> AiJob:
+        record = await self.repository.get_news(news_id)
+        return await self.repository.enqueue_job(record.id, AiJobType.SCORE)
+
+    async def generate_candidate(self, news_id: int) -> AiJob:
+        record = await self.repository.get_news(news_id)
+        return await self.repository.enqueue_job(record.id, AiJobType.GENERATE)
+
     async def regenerate_candidate(self, news_id: int) -> AiJob:
         record = await self.repository.get_news(news_id)
         if record.state is not NewsState.DRAFTED:
@@ -103,4 +130,8 @@ class NewsPipeline:
 
     async def clear_unready_pool(self) -> int:
         return await self.repository.clear_unready_news()
+
+    async def clear_all_pool(self) -> int:
+        return await self.repository.clear_all_news()
+
 

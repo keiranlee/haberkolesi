@@ -1320,6 +1320,38 @@ button, input, select, textarea {
   flex-shrink: 0;
 }
 
+.button-warning-outline {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(245, 158, 11, 0.08);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  color: #fbbf24;
+  padding: 8px 14px;
+  border-radius: 10px;
+  font-size: 0.84rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 180ms cubic-bezier(0.16, 1, 0.3, 1);
+  font-family: inherit;
+}
+
+.button-warning-outline:hover {
+  background: rgba(245, 158, 11, 0.18);
+  border-color: rgba(245, 158, 11, 0.6);
+  color: #fde047;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(245, 158, 11, 0.18);
+}
+
+.button-warning-outline:active {
+  transform: translateY(0);
+}
+
+.button-warning-outline svg {
+  flex-shrink: 0;
+}
+
 /* Filter Chips (Categories) */
 .filter-chips {
   display: flex;
@@ -2295,3 +2327,64 @@ textarea#edited_text:focus {
     display: none;
   }
 }
+
+.score-form-inline {
+  display: inline-block;
+  margin: 0;
+}
+
+.button-score-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border-radius: 999px;
+  background: rgba(142, 230, 0, 0.08);
+  color: var(--lime);
+  border: 1px solid rgba(142, 230, 0, 0.25);
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.button-score-inline:hover {
+  background: rgba(142, 230, 0, 0.18);
+  border-color: rgba(142, 230, 0, 0.45);
+  transform: translateY(-1px);
+}
+
+.button-score-inline:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.button-score-inline svg {
+  width: 12px;
+  height: 12px;
+  fill: currentColor;
+}
+
+.score-in-progress {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border-radius: 999px;
+  background: rgba(251, 191, 36, 0.1);
+  color: #fbbf24;
+  border: 1px solid rgba(251, 191, 36, 0.3);
+}
+
+.score-in-progress .spinner {
+  width: 11px;
+  height: 11px;
+  border: 1.5px solid currentColor;
+  border-right-color: transparent;
+  flex-shrink: 0;
+}
+
+

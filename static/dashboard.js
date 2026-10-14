@@ -4,14 +4,15 @@
 
   function getPollInterval(doc) {
     const liveEl = doc.getElementById('live-state');
-    if (!liveEl) return 8000;
-    const batchState = liveEl.dataset.batchState || 'none';
-    const runningJobs = parseInt(liveEl.dataset.runningJobs || '0', 10);
-    const pendingJobs = parseInt(liveEl.dataset.pendingJobs || '0', 10);
+    const activeInDom = doc.querySelectorAll('.score-in-progress, .state-running').length;
+    if (!liveEl && activeInDom === 0) return 8000;
+    const batchState = liveEl ? (liveEl.dataset.batchState || 'none') : 'none';
+    const runningJobs = parseInt(liveEl ? (liveEl.dataset.runningJobs || '0') : '0', 10);
+    const pendingJobs = parseInt(liveEl ? (liveEl.dataset.pendingJobs || '0') : '0', 10);
 
-    // If batch is running or jobs are active/pending, poll fast (2.5 seconds)
-    if (batchState === 'running' || runningJobs > 0 || pendingJobs > 0) {
-      return 2500;
+    // If batch is running or jobs are active/pending or spinner elements exist, poll fast (1.5 seconds)
+    if (batchState === 'running' || runningJobs > 0 || pendingJobs > 0 || activeInDom > 0) {
+      return 1500;
     }
     // Idle interval
     return 8000;
@@ -89,6 +90,7 @@
 
     // Rebind form listener if button/form was refreshed
     bindCollectForm();
+    bindScoreForms();
 
     return getPollInterval(newDoc);
   }
@@ -175,6 +177,33 @@
     });
   }
 
+  function bindScoreForms() {
+    document.querySelectorAll('.score-form-inline').forEach(function (form) {
+      if (form.dataset.bound) return;
+      form.dataset.bound = 'true';
+      form.addEventListener('submit', async function (event) {
+        event.preventDefault();
+        const btn = form.querySelector('button');
+        if (btn) {
+          btn.disabled = true;
+          btn.innerHTML = '<span class="spinner" aria-hidden="true" style="width:10px;height:10px;border-width:1.5px;margin-right:4px;"></span>Puanlanıyor…';
+        }
+        try {
+          const res = await fetch(form.action, {
+            method: 'POST',
+            body: new FormData(form),
+            headers: { 'X-Requested-With': 'XMLHttpRequest' }
+          });
+          if (res.ok) {
+            scheduleNext(1500);
+          }
+        } catch (err) {
+          console.error('Puanlama hatası:', err);
+        }
+      });
+    });
+  }
+
   document.addEventListener('visibilitychange', function () {
     if (!document.hidden) {
       fetchUpdate();
@@ -183,6 +212,7 @@
 
   // Start
   bindCollectForm();
+  bindScoreForms();
   const initialInterval = getPollInterval(document);
   scheduleNext(initialInterval);
 })();
