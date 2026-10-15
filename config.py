@@ -94,7 +94,7 @@ hashtagleri barındıran YENİ BİR METİN olarak yaz. Link için cümlenin sonu
 Kategori değeri SADECE 'Startup', 'Teknoloji', 'AI' veya 'Yazilim' olmalıdır."""
 
 # ─────────────────────────────────────────────────────────────
-# X (Twitter) Kimlik Bilgileri
+# X (Twitter) Kimlik Bilgileri (Devre Dışı)
 # ─────────────────────────────────────────────────────────────
 X_USERNAME: str = os.getenv("X_USERNAME", "")
 X_EMAIL: str = os.getenv("X_EMAIL", "")

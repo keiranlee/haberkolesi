@@ -164,6 +164,20 @@ class MemoryRepository:
             record = self._news[news_id]
             record.image_path = image_path
 
+    async def mark_x_published(
+        self,
+        news_id: int,
+        tweet_id: str,
+        published_at: Optional[datetime] = None,
+    ) -> None:
+        with self._lock:
+            record = self._news[news_id]
+            record.external_post_id = tweet_id
+            record.x_published_at = published_at or datetime.now(timezone.utc)
+            self.editor_actions.append(
+                EditorAction(news_id, "publish_x", datetime.now(timezone.utc))
+            )
+
     async def approve(self, news_id: int, edited_text: Optional[str] = None, platform_texts=None) -> None:
         if platform_texts is not None:
             from platform_copy import validate_platform_texts
@@ -471,6 +485,7 @@ class PostgresRepository:
             platform_texts=(json.loads(row["platform_texts"]) if isinstance(row.get("platform_texts"), str) else row.get("platform_texts")),
             image_path=row["image_path"] if "image_path" in row else None,
             external_post_id=row["external_post_id"],
+            x_published_at=row["x_published_at"] if "x_published_at" in row else None,
         )
 
     @staticmethod
@@ -704,6 +719,30 @@ class PostgresRepository:
                 news_id,
                 image_path,
             )
+
+    async def mark_x_published(
+        self,
+        news_id: int,
+        tweet_id: str,
+        published_at: Optional[datetime] = None,
+    ) -> None:
+        pub_time = published_at or datetime.now(timezone.utc)
+        async with self.pool.acquire() as connection:
+            async with connection.transaction():
+                await connection.execute(
+                    """
+                    UPDATE news_items
+                    SET external_post_id = $2, x_published_at = $3, updated_at = NOW()
+                    WHERE id = $1
+                    """,
+                    news_id,
+                    tweet_id,
+                    pub_time,
+                )
+                await connection.execute(
+                    "INSERT INTO editor_actions (news_id, action) VALUES ($1, 'publish_x')",
+                    news_id,
+                )
 
     async def approve(self, news_id: int, edited_text: Optional[str] = None, platform_texts=None) -> None:
         if platform_texts is not None:

@@ -178,12 +178,19 @@ CREATE INDEX IF NOT EXISTS idx_news_items_ranking
     ON news_items (ai_category, score DESC)
     WHERE state = 'scored' AND is_publishable = TRUE;
 
+ALTER TABLE news_items
+    ADD COLUMN IF NOT EXISTS x_published_at TIMESTAMPTZ;
+
 CREATE TABLE IF NOT EXISTS editor_actions (
     id              BIGSERIAL PRIMARY KEY,
     news_id         BIGINT NOT NULL REFERENCES news_items(id) ON DELETE CASCADE,
-    action          TEXT NOT NULL CHECK (action IN ('approve', 'reject', 'edit', 'regenerate')),
+    action          TEXT NOT NULL CHECK (action IN ('approve', 'reject', 'edit', 'regenerate', 'publish_x')),
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE editor_actions DROP CONSTRAINT IF EXISTS editor_actions_action_check;
+ALTER TABLE editor_actions
+    ADD CONSTRAINT editor_actions_action_check CHECK (action IN ('approve', 'reject', 'edit', 'regenerate', 'publish_x'));
 """
 
 

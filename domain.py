@@ -70,6 +70,7 @@ class NewsRecord:
     platform_texts: Optional[dict] = None
     image_path: Optional[str] = None
     external_post_id: Optional[str] = None
+    x_published_at: Optional[datetime] = None
 
 
 @dataclass
