@@ -29,8 +29,8 @@ VOLUME ["/app/data"]
 EXPOSE 8000
 
 # Sağlık kontrolü
-HEALTHCHECK --interval=60s --timeout=10s --retries=1 \
-    CMD curl --fail --silent http://127.0.0.1:8000/health || exit 1
+#HEALTHCHECK --interval=60s --timeout=10s --retries=3 \
+#    CMD curl --fail --silent http://127.0.0.1:8000/health || exit 1
 
 # Uygulamayı başlat
 CMD ["python", "-u", "main.py"]
