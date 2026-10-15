@@ -203,7 +203,7 @@ Tarayıcıda `http://sunucu-adresi:8000` adresini açın. Geliştirme parolası 
 
 ## 6. İleride Yapılacaklar
 
-- [ ] Resmî X API ile onaylı gönderi yayını
+- [x] Resmî X API v2 ile onaylı gönderi yayını (Tamamlandı)
 - [ ] Instagram ve Threads API ile onaylı gönderi yayını
 - [ ] Prometheus metrikleri
 - [ ] Telegram bildirim entegrasyonu
