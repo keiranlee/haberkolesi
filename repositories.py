@@ -40,6 +40,7 @@ class MemoryRepository:
         self.content_runs: Dict[int, ContentRun] = {}
         self._content_run_by_key: Dict[str, int] = {}
         self._next_content_run_id = 1
+        self._approved_at: Dict[int, datetime] = {}
 
     async def create_batch(self) -> int:
         batch_id = self._next_batch_id
@@ -178,6 +179,51 @@ class MemoryRepository:
                 EditorAction(news_id, "publish_x", datetime.now(timezone.utc))
             )
 
+    async def record_x_failure(self, news_id: int, error: str) -> None:
+        with self._lock:
+            record = self._news[news_id]
+            record.x_publish_attempts += 1
+            record.x_last_error = error[:500]
+
+    async def next_x_candidate(
+        self,
+        *,
+        preferred_category: Optional[Category] = None,
+        approved_since: Optional[datetime] = None,
+        max_attempts: int = 3,
+    ) -> Optional[NewsRecord]:
+        with self._lock:
+            candidates = [
+                record
+                for record in self._news.values()
+                if record.state is NewsState.APPROVED
+                and record.x_published_at is None
+                and record.x_publish_attempts < max_attempts
+                and (
+                    approved_since is None
+                    or self._approved_at.get(record.id, approved_since) >= approved_since
+                )
+            ]
+            if not candidates:
+                return None
+            candidates.sort(
+                key=lambda record: (
+                    (record.ai_category or record.raw.source_category) is preferred_category,
+                    record.raw.published_at or datetime.min.replace(tzinfo=timezone.utc),
+                    record.id,
+                ),
+                reverse=True,
+            )
+            return deepcopy(candidates[0])
+
+    async def count_x_published_since(self, since: datetime) -> int:
+        with self._lock:
+            return sum(
+                1
+                for record in self._news.values()
+                if record.x_published_at is not None and record.x_published_at >= since
+            )
+
     async def approve(self, news_id: int, edited_text: Optional[str] = None, platform_texts=None) -> None:
         if platform_texts is not None:
             from platform_copy import validate_platform_texts
@@ -200,6 +246,7 @@ class MemoryRepository:
                     record.draft_text
                 )
             record.state = NewsState.APPROVED
+            self._approved_at[news_id] = datetime.now(timezone.utc)
             if platform_texts is not None:
                 record.platform_texts = deepcopy(platform_texts)
             elif record.platform_texts:
@@ -486,6 +533,8 @@ class PostgresRepository:
             image_path=row["image_path"] if "image_path" in row else None,
             external_post_id=row["external_post_id"],
             x_published_at=row["x_published_at"] if "x_published_at" in row else None,
+            x_publish_attempts=(row["x_publish_attempts"] or 0) if "x_publish_attempts" in row else 0,
+            x_last_error=row["x_last_error"] if "x_last_error" in row else None,
         )
 
     @staticmethod
@@ -743,6 +792,54 @@ class PostgresRepository:
                     "INSERT INTO editor_actions (news_id, action) VALUES ($1, 'publish_x')",
                     news_id,
                 )
+
+    async def record_x_failure(self, news_id: int, error: str) -> None:
+        # updated_at bilinçli olarak değiştirilmez: onaylı kuyruk bu kolonu
+        # onay zamanı olarak kullanır.
+        async with self.pool.acquire() as connection:
+            await connection.execute(
+                """
+                UPDATE news_items
+                SET x_publish_attempts = x_publish_attempts + 1, x_last_error = $2
+                WHERE id = $1
+                """,
+                news_id,
+                error[:500],
+            )
+
+    async def next_x_candidate(
+        self,
+        *,
+        preferred_category: Optional[Category] = None,
+        approved_since: Optional[datetime] = None,
+        max_attempts: int = 3,
+    ) -> Optional[NewsRecord]:
+        async with self.pool.acquire() as connection:
+            row = await connection.fetchrow(
+                """
+                SELECT * FROM news_items
+                WHERE state = 'approved'
+                  AND x_published_at IS NULL
+                  AND x_publish_attempts < $3
+                  AND ($2::timestamptz IS NULL OR updated_at >= $2::timestamptz)
+                ORDER BY (COALESCE(ai_category, source_category) = $1) DESC NULLS LAST,
+                         published_at DESC NULLS LAST,
+                         id DESC
+                LIMIT 1
+                """,
+                preferred_category.value if preferred_category is not None else None,
+                approved_since,
+                max_attempts,
+            )
+        return self._news_from_row(row) if row is not None else None
+
+    async def count_x_published_since(self, since: datetime) -> int:
+        async with self.pool.acquire() as connection:
+            value = await connection.fetchval(
+                "SELECT COUNT(*) FROM news_items WHERE x_published_at >= $1",
+                since,
+            )
+        return int(value or 0)
 
     async def approve(self, news_id: int, edited_text: Optional[str] = None, platform_texts=None) -> None:
         if platform_texts is not None:

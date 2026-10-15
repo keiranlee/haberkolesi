@@ -180,6 +180,18 @@ CREATE INDEX IF NOT EXISTS idx_news_items_ranking
 
 ALTER TABLE news_items
     ADD COLUMN IF NOT EXISTS x_published_at TIMESTAMPTZ;
+ALTER TABLE news_items
+    ADD COLUMN IF NOT EXISTS x_publish_attempts INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE news_items
+    ADD COLUMN IF NOT EXISTS x_last_error TEXT;
+
+CREATE INDEX IF NOT EXISTS idx_news_items_x_queue
+    ON news_items (updated_at DESC)
+    WHERE state = 'approved' AND x_published_at IS NULL;
+
+CREATE INDEX IF NOT EXISTS idx_news_items_x_published
+    ON news_items (x_published_at)
+    WHERE x_published_at IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS editor_actions (
     id              BIGSERIAL PRIMARY KEY,

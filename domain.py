@@ -71,6 +71,8 @@ class NewsRecord:
     image_path: Optional[str] = None
     external_post_id: Optional[str] = None
     x_published_at: Optional[datetime] = None
+    x_publish_attempts: int = 0
+    x_last_error: Optional[str] = None
 
 
 @dataclass

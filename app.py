@@ -46,6 +46,7 @@ def create_app(
     scheduler=None,
     rate_gate=None,
     content_runner=None,
+    x_publisher=None,
     close_callback: Optional[Callable[[], Awaitable[None]]] = None,
 ) -> FastAPI:
     @asynccontextmanager
@@ -230,6 +231,8 @@ def create_app(
                 "record": record,
                 "state_labels": STATE_LABELS,
                 "unsafe_password": settings.admin_password == "1234",
+                "x_enabled": x_publisher is not None,
+                "flash": request.session.pop("flash", None),
             },
         )
 
@@ -395,5 +398,30 @@ def create_app(
         if next_candidate is None:
             return RedirectResponse("/", status_code=303)
         return RedirectResponse(f"/news/{next_candidate.id}", status_code=303)
+
+    @app.post("/news/{news_id}/publish-x")
+    async def publish_x(
+        request: Request,
+        news_id: int,
+        csrf_token: str = Form(""),
+    ):
+        require_admin(request)
+        verify_csrf(request, csrf_token)
+        if x_publisher is None:
+            raise HTTPException(status_code=503, detail="X paylaşımı yapılandırılmamış")
+        from x_publisher import XPublishError
+
+        try:
+            tweet_id = await x_publisher.publish_news(news_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="News not found") from exc
+        except (ValueError, XPublishError) as exc:
+            request.session["flash"] = {"kind": "error", "message": str(exc)}
+        else:
+            request.session["flash"] = {
+                "kind": "success",
+                "message": f"X'te paylaşıldı (tweet {tweet_id})",
+            }
+        return RedirectResponse(f"/news/{news_id}", status_code=303)
 
     return app

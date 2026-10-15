@@ -94,7 +94,7 @@ hashtagleri barındıran YENİ BİR METİN olarak yaz. Link için cümlenin sonu
 Kategori değeri SADECE 'Startup', 'Teknoloji', 'AI' veya 'Yazilim' olmalıdır."""
 
 # ─────────────────────────────────────────────────────────────
-# X (Twitter) Kimlik Bilgileri (Devre Dışı)
+# X (Twitter) Kimlik Bilgileri — eski modüller için. Güncel akış Settings.x_* kullanır.
 # ─────────────────────────────────────────────────────────────
 X_USERNAME: str = os.getenv("X_USERNAME", "")
 X_EMAIL: str = os.getenv("X_EMAIL", "")
@@ -245,6 +245,23 @@ class Settings:
     cookie_secure: bool
     data_dir: Path
     max_news_age_hours: int = 48
+    x_enabled: bool = False
+    x_auto_publish: bool = True
+    x_backend: str = "official"
+    # Resmi X API v2 (OAuth 1.0a)
+    x_api_key: str = ""
+    x_api_key_secret: str = ""
+    x_access_token: str = ""
+    x_access_token_secret: str = ""
+    # Alternatif (twikit)
+    x_auth_token: str = ""
+    x_ct0: str = ""
+    x_username: str = ""
+    x_email: str = ""
+    x_password: str = ""
+    x_totp_secret: str = ""
+    x_proxy: str = ""
+    x_daily_limit: int = 8
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -255,6 +272,10 @@ class Settings:
         candidate_limit = int(os.getenv("CANDIDATE_LIMIT_PER_CATEGORY", "3"))
         if candidate_limit < 1:
             raise ValueError("CANDIDATE_LIMIT_PER_CATEGORY must be at least 1")
+
+        x_daily_limit = int(os.getenv("X_DAILY_LIMIT", "8"))
+        if x_daily_limit < 1:
+            raise ValueError("X_DAILY_LIMIT must be at least 1")
 
         return cls(
             database_url=_required_environment("DATABASE_URL"),
@@ -268,6 +289,21 @@ class Settings:
             cookie_secure=_environment_bool("COOKIE_SECURE"),
             data_dir=Path(os.getenv("DATA_DIR", str(BASE_DIR / "data"))),
             max_news_age_hours=int(os.getenv("MAX_NEWS_AGE_HOURS", "48")),
+            x_enabled=_environment_bool("X_ENABLED"),
+            x_auto_publish=_environment_bool("X_AUTO_PUBLISH", default=True),
+            x_backend=os.getenv("X_BACKEND", "official").strip().lower(),
+            x_api_key=os.getenv("X_API_KEY", "").strip(),
+            x_api_key_secret=os.getenv("X_API_KEY_SECRET", "").strip(),
+            x_access_token=os.getenv("X_ACCESS_TOKEN", "").strip(),
+            x_access_token_secret=os.getenv("X_ACCESS_TOKEN_SECRET", "").strip(),
+            x_auth_token=os.getenv("X_AUTH_TOKEN", "").strip(),
+            x_ct0=os.getenv("X_CT0", "").strip(),
+            x_username=os.getenv("X_USERNAME", "").strip(),
+            x_email=os.getenv("X_EMAIL", "").strip(),
+            x_password=os.getenv("X_PASSWORD", ""),
+            x_totp_secret=os.getenv("X_TOTP_SECRET", "").strip(),
+            x_proxy=os.getenv("X_PROXY", "").strip(),
+            x_daily_limit=x_daily_limit,
         )
 
 

@@ -85,8 +85,21 @@
 <section class="surface-card composer-card" aria-labelledby="draft-title">
   <header class="composer-header">
     <div><p class="eyebrow">Editör çalışma alanı</p><h2 id="draft-title">Yayın taslağı</h2></div>
-    <div class="publish-state"><span class="status-dot is-muted"></span>X yayını kapalı</div>
+    <div class="publish-state">
+      {% if record.x_published_at %}
+      <span class="status-dot"></span>X'te paylaşıldı
+      {% elif x_enabled %}
+      <span class="status-dot"></span>X yayını hazır
+      {% else %}
+      <span class="status-dot is-muted"></span>X yayını kapalı
+      {% endif %}
+    </div>
   </header>
+  {% if flash %}
+  <div style="margin-bottom: 16px; padding: 12px 16px; border-radius: var(--radius-inner); font-weight: 500; font-size: 0.9rem; {% if flash.kind == 'success' %}background: rgba(200, 244, 53, 0.15); color: var(--lime); border: 1px solid rgba(200, 244, 53, 0.3);{% else %}background: rgba(255, 92, 92, 0.15); color: #ff7070; border: 1px solid rgba(255, 92, 92, 0.3);{% endif %}">
+    {{ flash.message }}
+  </div>
+  {% endif %}
   {% if record.state.value == "drafted" and record.draft_text %}
   <div class="composer-workspace" aria-label="Haber işlem adımları">
     <form action="/news/{{ record.id }}/approve" method="post" class="composer-form">
@@ -123,7 +136,33 @@
     <h3>Threads</h3><p style="white-space: pre-wrap">{{ record.platform_texts.get('threads', '') }}</p>
     <h3>Instagram</h3><p style="white-space: pre-wrap">{{ record.platform_texts.get('instagram', '') }}</p>
     {% endif %}
-    <small>Bu kayıt tamamlandığı için düzenleme aksiyonları kapalıdır.</small>
+
+    {% if record.state.value == "approved" %}
+      {% if record.x_published_at %}
+      <div style="margin-top: 14px; padding: 12px 16px; background: rgba(200, 244, 53, 0.08); border: 1px solid rgba(200, 244, 53, 0.25); border-radius: var(--radius-inner); display: flex; align-items: center; justify-content: space-between; flex-wrap: gap; gap: 10px;">
+        <span style="color: var(--lime); font-size: 0.9rem; font-weight: 600;">✓ X'te Paylaşıldı ({{ record.x_published_at|istanbul_datetime }})</span>
+        {% if record.external_post_id %}
+        <a href="https://x.com/i/status/{{ record.external_post_id }}" target="_blank" rel="noopener noreferrer" class="button button-secondary button-sm">
+          Tweeti Görüntüle ↗
+        </a>
+        {% endif %}
+      </div>
+      {% elif x_enabled %}
+      <div style="margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border);">
+        <form action="/news/{{ record.id }}/publish-x" method="post" style="display: inline-block;">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button class="button button-primary" type="submit" onclick="return confirm('Bu haberi şimdi resmi X hesabında paylaşmak istiyor musunuz?')">
+            <svg aria-hidden="true" viewBox="0 0 24 24" style="width:16px;height:16px;fill:currentColor;"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
+            X'te Şimdi Paylaş
+          </button>
+        </form>
+        {% if record.x_last_error %}
+        <p style="color: #ff7070; font-size: 0.8rem; margin-top: 8px;">Son paylaşım hatası: {{ record.x_last_error }}</p>
+        {% endif %}
+      </div>
+      {% endif %}
+    {% endif %}
+    <small style="margin-top: 8px;">Bu kayıt onaylandığı için metin düzenleme aksiyonları kapatılmıştır.</small>
   </div>
   {% elif record.state.value == "scored" %}
   <div class="composer-empty">

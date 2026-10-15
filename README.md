@@ -2,7 +2,7 @@
 
 RSS kaynaklarından güncel teknoloji haberlerini toplayan; planlanan kategorideki adayları tek Gemini çağrısıyla puanlayan ve editör onayına sunulacak Türkçe Devosuit metni ile görsel kartı hazırlayan yönetim paneli.
 
-X, Instagram ve Threads paylaşımı bu aşamada kapalıdır; metin ve görsel otomatik hazırlanır.
+Resmi X API v2 entegrasyonu mevcuttur; panel üzerinden onaylanan haberler tek tıkla X'te paylaşılabilir veya planlı saat dilimlerinde otomatik olarak gönderilir (görsel kart + 240 karakter metin).
 
 ## Akış
 
@@ -70,8 +70,8 @@ Görsel ortaktır. Eski tek metinli kayıtlar `Yeniden üret` ile dönüştürü
 - Açık Gemini kuyruk durumu
 - 10:00–20:00 yayın dilimlerinin canlı durumları
 - Sıradaki yayın kategorisini saat beklemeden test etme
-
-Onay işlemi yalnız veritabanı durumunu değiştirir. X API çağrısı yapmaz.
+- Onaylanan haberi panelden tek tıkla resmi X hesabında paylaşma (`X'te Şimdi Paylaş`)
+- Planlanan yayın diliminde onaylı haberleri otomatik olarak X'te tweetleme (`X_AUTO_PUBLISH=true`)
 
 ## Testler
 
