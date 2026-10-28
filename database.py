@@ -165,6 +165,8 @@ ALTER TABLE generation_versions
 
 ALTER TABLE ai_jobs
     ADD COLUMN IF NOT EXISTS claimed_at TIMESTAMPTZ;
+ALTER TABLE ai_jobs
+    ADD COLUMN IF NOT EXISTS provider TEXT CHECK (provider IN ('gemini', 'openai'));
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_ai_jobs_one_active
     ON ai_jobs (news_id, job_type)
@@ -184,6 +186,8 @@ ALTER TABLE news_items
     ADD COLUMN IF NOT EXISTS x_publish_attempts INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE news_items
     ADD COLUMN IF NOT EXISTS x_last_error TEXT;
+ALTER TABLE news_items
+    ADD COLUMN IF NOT EXISTS x_thread_post_ids JSONB NOT NULL DEFAULT '[]'::jsonb;
 
 CREATE INDEX IF NOT EXISTS idx_news_items_x_queue
     ON news_items (updated_at DESC)
@@ -192,6 +196,12 @@ CREATE INDEX IF NOT EXISTS idx_news_items_x_queue
 CREATE INDEX IF NOT EXISTS idx_news_items_x_published
     ON news_items (x_published_at)
     WHERE x_published_at IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS ai_settings (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    provider TEXT NOT NULL CHECK (provider IN ('gemini', 'openai'))
+);
+INSERT INTO ai_settings (id, provider) VALUES (1, 'openai') ON CONFLICT (id) DO NOTHING;
 
 CREATE TABLE IF NOT EXISTS editor_actions (
     id              BIGSERIAL PRIMARY KEY,

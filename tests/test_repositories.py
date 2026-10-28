@@ -78,8 +78,8 @@ async def test_approve_rejects_undrafted_news_and_oversized_text():
         await repository.approve(news.id, "Text")
 
     await repository.save_draft(news.id, "Generated text", ["Fact"])
-    with pytest.raises(ValueError, match="240"):
-        await repository.approve(news.id, "x" * 241)
+    with pytest.raises(ValueError, match="280"):
+        await repository.approve(news.id, "x" * 281)
 
 
 @pytest.mark.asyncio

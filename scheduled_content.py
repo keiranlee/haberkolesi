@@ -16,6 +16,7 @@ from gemini_service import (
     UnsafeDraftError,
 )
 from schedule import PublishingSlot
+from platform_copy import content_pack
 
 
 ISTANBUL = ZoneInfo("Europe/Istanbul")
@@ -51,8 +52,10 @@ class ScheduledContentRunner:
         candidate_limit: int = 3,
         min_score: float = 7.5,
         sleeper: Optional[Callable[[float], Awaitable[None]]] = None,
+        ai_providers=None,
     ):
         self.repository = repository
+        self.ai_providers = ai_providers
         self.collector = collector
         self.gemini = gemini
         self.image_service = image_service
@@ -104,6 +107,10 @@ class ScheduledContentRunner:
         batch_id = await self.repository.create_batch()
         collection = None
         try:
+            text_service, image_service = self.gemini, self.image_service
+            if self.ai_providers is not None:
+                provider = await self.ai_providers.snapshot()
+                text_service, image_service = provider.text, provider.images
             collection = await self.collector.collect(slot.category)
             raw_candidates = select_slot_candidates(
                 collection.items,
@@ -130,7 +137,7 @@ class ScheduledContentRunner:
                 run.state = ContentRunState.SKIPPED
                 return run
 
-            editorial = await self._evaluate_with_retry(candidates)
+            editorial = await self._evaluate_with_retry(candidates, text_service)
             for evaluation in editorial.evaluations:
                 await self.repository.save_score(
                     evaluation.news_id,
@@ -181,11 +188,11 @@ class ScheduledContentRunner:
                 winner.id,
                 editorial.text,
                 editorial.used_facts,
-                platform_texts={"x": editorial.text, "threads": editorial.threads_text, "instagram": editorial.instagram_text},
+                platform_texts=content_pack(editorial),
             )
             run.selected_news_id = winner.id
             image_path = await asyncio.to_thread(
-                self.image_service.generate_card,
+                image_service.generate_card,
                 winner.id,
                 editorial.image_title,
                 slot.category,
@@ -217,14 +224,16 @@ class ScheduledContentRunner:
     async def _evaluate_with_retry(
         self,
         candidates: List[NewsRecord],
+        text_service=None,
     ):
+        text_service = text_service or self.gemini
         try:
-            return await self.gemini.evaluate_candidates(candidates)
+            return await text_service.evaluate_candidates(candidates)
         except Exception as exc:
             if not self._is_retryable(exc):
                 raise
             await self.sleeper(self._retry_delay(exc))
-            return await self.gemini.evaluate_candidates(candidates)
+            return await text_service.evaluate_candidates(candidates)
 
     @staticmethod
     def _is_retryable(error: Exception) -> bool:

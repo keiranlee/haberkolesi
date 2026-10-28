@@ -41,6 +41,26 @@ class MemoryRepository:
         self._content_run_by_key: Dict[str, int] = {}
         self._next_content_run_id = 1
         self._approved_at: Dict[int, datetime] = {}
+        self._ai_provider = "openai"
+        self._job_providers: Dict[int, str] = {}
+
+    async def bind_job_provider(self, job_id: int, provider: str) -> str:
+        if provider not in {"gemini", "openai"}:
+            raise ValueError("Invalid AI provider")
+        with self._lock:
+            if job_id not in self._jobs:
+                raise KeyError(job_id)
+            return self._job_providers.setdefault(job_id, provider)
+
+    async def get_ai_provider(self) -> str:
+        with self._lock:
+            return self._ai_provider
+
+    async def set_ai_provider(self, provider: str) -> None:
+        if provider not in {"gemini", "openai"}:
+            raise ValueError("Invalid AI provider")
+        with self._lock:
+            self._ai_provider = provider
 
     async def create_batch(self) -> int:
         batch_id = self._next_batch_id
@@ -165,6 +185,11 @@ class MemoryRepository:
             record = self._news[news_id]
             record.image_path = image_path
 
+    async def save_x_thread_post(self, news_id: int, post_id: str) -> None:
+        with self._lock:
+            record = self._news[news_id]
+            record.x_thread_post_ids = (record.x_thread_post_ids or []) + [post_id]
+
     async def mark_x_published(
         self,
         news_id: int,
@@ -238,8 +263,8 @@ class MemoryRepository:
             )
             if not candidate_text:
                 raise ValueError("Approved text cannot be empty")
-            if len(candidate_text) > 240:
-                raise ValueError("Approved text cannot exceed 240 characters")
+            if len(candidate_text) > 280:
+                raise ValueError("Approved text cannot exceed 280 characters")
             if edited_text is not None and edited_text.strip():
                 record.draft_text = edited_text.strip()
                 self.generation_versions.setdefault(news_id, []).append(
@@ -483,6 +508,7 @@ class MemoryRepository:
             self._news.clear()
             self._news_by_url.clear()
             self._jobs.clear()
+            self._job_providers.clear()
             self.generation_versions.clear()
             self.editor_actions.clear()
             for run in self.content_runs.values():
@@ -504,6 +530,39 @@ class PostgresRepository:
 
     def __init__(self, pool):
         self.pool = pool
+
+    async def save_x_thread_post(self, news_id: int, post_id: str) -> None:
+        async with self.pool.acquire() as connection:
+            await connection.execute(
+                "UPDATE news_items SET x_thread_post_ids = x_thread_post_ids || $2::jsonb WHERE id = $1",
+                news_id, json.dumps([post_id]),
+            )
+
+    async def bind_job_provider(self, job_id: int, provider: str) -> str:
+        if provider not in {"gemini", "openai"}:
+            raise ValueError("Invalid AI provider")
+        async with self.pool.acquire() as conn:
+            pinned = await conn.fetchval(
+                "UPDATE ai_jobs SET provider = COALESCE(provider, $2) WHERE id = $1 RETURNING provider",
+                job_id, provider,
+            )
+            if pinned is None:
+                raise KeyError(job_id)
+            return pinned
+
+    async def get_ai_provider(self) -> str:
+        async with self.pool.acquire() as conn:
+            return await conn.fetchval("SELECT provider FROM ai_settings WHERE id = 1") or "openai"
+
+    async def set_ai_provider(self, provider: str) -> None:
+        if provider not in {"gemini", "openai"}:
+            raise ValueError("Invalid AI provider")
+        async with self.pool.acquire() as conn:
+            await conn.execute(
+                "INSERT INTO ai_settings (id, provider) VALUES (1, $1) "
+                "ON CONFLICT (id) DO UPDATE SET provider = EXCLUDED.provider",
+                provider,
+            )
 
     @staticmethod
     def _news_from_row(row) -> NewsRecord:
@@ -535,6 +594,7 @@ class PostgresRepository:
             x_published_at=row["x_published_at"] if "x_published_at" in row else None,
             x_publish_attempts=(row["x_publish_attempts"] or 0) if "x_publish_attempts" in row else 0,
             x_last_error=row["x_last_error"] if "x_last_error" in row else None,
+            x_thread_post_ids=PostgresRepository._json_list(row.get("x_thread_post_ids")),
         )
 
     @staticmethod
@@ -854,8 +914,8 @@ class PostgresRepository:
         )
         if not candidate_text:
             raise ValueError("Approved text cannot be empty")
-        if len(candidate_text) > 240:
-            raise ValueError("Approved text cannot exceed 240 characters")
+        if len(candidate_text) > 280:
+            raise ValueError("Approved text cannot exceed 280 characters")
         if platform_texts is None and record.platform_texts:
             platform_texts = {**record.platform_texts, "x": candidate_text}
         async with self.pool.acquire() as connection:
@@ -1196,6 +1256,3 @@ class PostgresRepository:
                 """
             )
         return {row["news_id"]: row["job_type"] for row in rows}
-
-
-

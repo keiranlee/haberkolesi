@@ -113,7 +113,7 @@ def test_dashboard_shows_queue_filters_and_schedule():
         login(client)
         html = client.get("/").text
 
-    assert "Gemini kuyruğu" in html
+    assert "AI kuyruğu" in html
     assert "Sonraki istek" in html
     assert 'name="category"' in html
     assert "10:00" in html
@@ -130,7 +130,7 @@ def test_dashboard_offers_immediate_test_for_the_next_scheduled_category():
 
     assert 'action="/content/test-next-slot"' in html
     assert "Sıradaki kategoriyi şimdi test et" in html
-    assert "1 Gemini isteği" in html
+    assert "Seçili AI ile puanlama" in html
 
 
 def test_next_slot_test_route_requires_csrf_and_starts_runner():
@@ -246,7 +246,7 @@ def test_detail_is_an_editorial_workspace_with_bounded_composer():
 
     assert "İçerik istihbaratı" in html
     assert 'aria-label="Haber işlem adımları"' in html
-    assert 'maxlength="240"' in html
+    assert 'maxlength="280"' in html
     assert "Yayın taslağı" in html
     assert 'href="/#news" aria-current="page"' in html
 
@@ -332,7 +332,7 @@ def test_draft_actions_explain_quota_and_confirm_rejection():
         login(client)
         html = client.get(f"/news/{news_id}").text
 
-    assert "Yeniden üretmek 1 Gemini isteği kullanır" in html
+    assert "Panelde seçili AI ile X, Threads, Instagram ve ayrıntılı blog" in html
     assert 'onsubmit="return confirm(' in html
 
 
@@ -515,5 +515,3 @@ def test_clear_all_news_endpoint():
     assert response.status_code == 303
     assert response.headers["location"] == "/"
     assert asyncio.run(repository.count_news()) == 0
-
-

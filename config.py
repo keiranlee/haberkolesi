@@ -245,6 +245,10 @@ class Settings:
     cookie_secure: bool
     data_dir: Path
     max_news_age_hours: int = 48
+    openai_api_key: str = ""
+    openai_model: str = "gpt-5.4-mini"
+    openai_image_model: str = "gpt-image-2"
+    openai_image_quality: str = "low"
     x_enabled: bool = False
     x_auto_publish: bool = True
     x_backend: str = "official"
@@ -265,6 +269,9 @@ class Settings:
 
     @classmethod
     def from_env(cls) -> "Settings":
+        image_quality = os.getenv("OPENAI_IMAGE_QUALITY", "low").strip().lower()
+        if image_quality not in {"low", "medium", "high"}:
+            raise ValueError("OPENAI_IMAGE_QUALITY must be low, medium or high")
         interval = float(os.getenv("GEMINI_MIN_INTERVAL_SECONDS", "15"))
         if interval < 15:
             raise ValueError("GEMINI_MIN_INTERVAL_SECONDS must be at least 15")
@@ -279,7 +286,11 @@ class Settings:
 
         return cls(
             database_url=_required_environment("DATABASE_URL"),
-            gemini_api_key=_required_environment("GEMINI_API_KEY"),
+            gemini_api_key=os.getenv("GEMINI_API_KEY", "").strip(),
+            openai_api_key=os.getenv("OPENAI_API_KEY", "").strip(),
+            openai_model=os.getenv("OPENAI_MODEL", "gpt-5.4-mini").strip(),
+            openai_image_model=os.getenv("OPENAI_IMAGE_MODEL", "gpt-image-2").strip(),
+            openai_image_quality=image_quality,
             admin_password=_required_environment("ADMIN_PASSWORD"),
             session_secret=_required_environment("SESSION_SECRET"),
             gemini_model=os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite").strip(),

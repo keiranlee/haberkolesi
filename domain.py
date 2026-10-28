@@ -73,6 +73,7 @@ class NewsRecord:
     x_published_at: Optional[datetime] = None
     x_publish_attempts: int = 0
     x_last_error: Optional[str] = None
+    x_thread_post_ids: Optional[List[str]] = None
 
 
 @dataclass

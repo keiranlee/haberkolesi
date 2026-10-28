@@ -9,7 +9,7 @@ Bu belge, Haber Kölesi botunun Docker ile nasıl çalıştırılacağını ve C
 - Docker 20.10+
 - Docker Compose (opsiyonel)
 - PostgreSQL 15+ veritabanı (harici veya Docker'da)
-- Gemini API anahtarı ([Google AI Studio](https://aistudio.google.com/))
+- Varsayılan OpenAI sağlayıcısı için API anahtarı ([OpenAI Platform](https://platform.openai.com/api-keys)); Gemini alternatifi isteğe bağlıdır
 - Yönetim paneli parolası ve uzun, rastgele bir oturum anahtarı
 
 ---
@@ -27,7 +27,7 @@ cp .env.example .env
 | Değişken | Açıklama | Örnek |
 |----------|----------|-------|
 | `DATABASE_URL` | PostgreSQL bağlantı dizesi | `postgres://user:pass@host:5432/havuz` |
-| `GEMINI_API_KEY` | Google Gemini API anahtarı | `AIzaSy...` |
+| `OPENAI_API_KEY` | Varsayılan OpenAI sağlayıcısının API anahtarı | Kendi proje anahtarınız |
 | `ADMIN_PASSWORD` | Panel giriş parolası | Geliştirmede `1234` |
 | `SESSION_SECRET` | İmzalı oturum anahtarı | Uzun rastgele değer |
 
@@ -35,6 +35,10 @@ cp .env.example .env
 
 | Değişken | Varsayılan | Açıklama |
 |----------|-----------|----------|
+| `OPENAI_MODEL` | `gpt-5.4-mini` | Puanlama, sosyal metin ve iki dilli blog modeli |
+| `OPENAI_IMAGE_MODEL` | `gpt-image-2` | Yazısız haber illüstrasyonu |
+| `OPENAI_IMAGE_QUALITY` | `low` | Görsel kalite/maliyet ayarı |
+| `GEMINI_API_KEY` | boş | Gemini alternatifini etkinleştirir |
 | `GEMINI_MODEL` | `gemini-3.5-flash-lite` | Düşük maliyetli, structured output destekli güncel Gemini modeli |
 | `GEMINI_MIN_SCORE` | `8.0` | Minimum skorlama eşiği |
 | `GEMINI_MIN_INTERVAL_SECONDS` | `15` | Gemini istekleri arasındaki alt sınır |
@@ -69,11 +73,11 @@ docker run -d \
 
 Panel: `http://localhost:8000`
 
-Panel; 10:00–20:00 arasındaki altı yayın diliminde yalnız planlanan kategoriyi tarar, en fazla üç adayı tek Gemini çağrısında değerlendirir ve kazanan için metin ile 1200×675 Devosuit görseli üretir. X, Instagram ve Threads paylaşımı kapalıdır.
+Panel; 10:00–20:00 arasındaki altı yayın diliminde yalnız planlanan kategoriyi tarar, en fazla üç adayı seçili sağlayıcıyla tek metin isteğinde değerlendirir. Varsayılan OpenAI, kazanan için sosyal metinler, Türkçe/İngilizce blog ve ayrıca bir yazısız görsel üretir. Panelde Gemini alternatifi seçilebilir. Sosyal paylaşım, ayrı platform ayarlarıyla etkinleştirilir.
 
 X, Threads ve Instagram metinleri tek istekte ayrı hazırlanır. Kaynak linki veya “yazıya göre” kalıpları yerine doğrudan haber dili kullanılır. Sayısal ifadelerin kaynakta bulunması yerel olarak kontrol edilir; görüş ve tahminlerde kesinlik düzeyinin korunması istenir.
 
-Paneldeki **Sıradaki kategoriyi şimdi test et** işlemi, bir sonraki yayın diliminin kategorisini anında tarayıp içerik hazırlar. Bu manuel işlem bir Gemini batch isteği kullanabilir; ayrı `test:` çalışma anahtarı sayesinde planlı görevin çalışmasını engellemez.
+Paneldeki **Sıradaki kategoriyi şimdi test et** işlemi, bir sonraki yayın diliminin kategorisini anında tarayıp seçili sağlayıcıyla içerik hazırlar. Ayrı `test:` çalışma anahtarı sayesinde planlı görevin çalışmasını engellemez. Ayrıntılı OpenAI ve blog kurulumu için [OpenAI kurulumu](docs/openai-setup.md) belgesine bakın.
 
 ### 2.3 Docker Compose (Opsiyonel)
 

@@ -45,8 +45,16 @@ class ContentType(str, Enum):
 
 class RegeneratedContentResult(BaseModel):
     text: str = Field(min_length=1)
-    threads_text: str = Field(min_length=1, max_length=480)
+    threads_text: str = Field(min_length=1, max_length=500)
     instagram_text: str = Field(min_length=1, max_length=1800)
+    x_followups: str = Field(min_length=1, max_length=850)
+    threads_followups: str = Field(min_length=1, max_length=1010)
+    blog_title: str = Field(min_length=1, max_length=160)
+    blog_description: str = Field(min_length=1, max_length=170)
+    blog_text: str = Field(min_length=1, max_length=14000)
+    blog_title_en: str = Field(min_length=1, max_length=160)
+    blog_description_en: str = Field(min_length=1, max_length=170)
+    blog_text_en: str = Field(min_length=1, max_length=14000)
     image_title: str = Field(min_length=1, max_length=120)
     image_fact: str = Field(min_length=1, max_length=500)
     used_facts: List[str] = Field(min_length=1, max_length=12)
@@ -71,8 +79,16 @@ class EditorialBatchResult(BaseModel):
     evaluations: List[CandidateScore] = Field(min_length=1, max_length=3)
     selected_news_id: Optional[int] = None
     text: Optional[str] = None
-    threads_text: Optional[str] = Field(default=None, max_length=480)
+    threads_text: Optional[str] = Field(default=None, max_length=500)
     instagram_text: Optional[str] = Field(default=None, max_length=1800)
+    x_followups: Optional[str] = Field(default=None, max_length=850)
+    threads_followups: Optional[str] = Field(default=None, max_length=1010)
+    blog_title: Optional[str] = Field(default=None, max_length=160)
+    blog_description: Optional[str] = Field(default=None, max_length=170)
+    blog_text: Optional[str] = Field(default=None, max_length=14000)
+    blog_title_en: Optional[str] = Field(default=None, max_length=160)
+    blog_description_en: Optional[str] = Field(default=None, max_length=170)
+    blog_text_en: Optional[str] = Field(default=None, max_length=14000)
     image_title: Optional[str] = None
     image_fact: Optional[str] = None
     used_facts: List[str] = Field(default_factory=list, max_length=12)
@@ -137,7 +153,7 @@ class GeminiService:
         transport: GeminiTransport,
         gate: AsyncRequestGate,
         model: str,
-        max_draft_chars: int = 240,
+        max_draft_chars: int = 280,
     ):
         self.transport = transport
         self.gate = gate
@@ -232,11 +248,17 @@ class GeminiService:
                 if "180" in last_error:
                     curr_len = len(last_result_text or "")
                     feedback += f" Önceki metin yalnızca {curr_len} karakterdi (180'den az)! Lütfen cümleyi biraz daha genişleterek metni KESİNLİKLE 195-225 karakter aralığına çıkar."
-                elif "240" in last_error:
+                elif "exceeds" in last_error:
                     curr_len = len(last_result_text or "")
-                    feedback += f" Önceki metin {curr_len} karakterle 240 karakter sınırını aştı! Metni 195-220 karakter aralığına inecek şekilde kısalt."
+                    feedback += f" Önceki ilk X metni {curr_len} karakterle sınırı aştı. İlk gönderiyi 250-275 karaktere kısalt, açıklamayı x_followups alanına taşı."
+                elif "x_followups" in last_error:
+                    feedback += " Her devam gönderisi en fazla 280 karakter olmalı; gönderiler arasında boş satır kullan. Uzun paragrafı iki gönderiye böl, toplam en fazla üç devam gönderisi yaz."
+                elif "threads_followups" in last_error:
+                    feedback += " Threads devam gönderilerini boş satırla ayır; her biri en fazla 500 karakter ve toplam en fazla iki gönderi olsun."
+                elif "Blog length" in last_error:
+                    feedback += " Blog zengin kaynak için fazla kısa. En az 500 kelime yaz. Önceki birkaç onaylı olguyu döndürmek yerine tam kaynaktaki ekip, yöntem, test donanımı/koşulları, güçlü ve zayıf sonuçlar, karşılaştırmalar, kullanım/kurulum ve lisans ayrıntılarını işle. Kaynakta mevcut ayrıntıları 'bilinmiyor' diyerek geçiştirme. Dolgu veya tekrar ekleme."
                 elif "threads_text" in last_error or "480" in last_error:
-                    feedback += " threads_text 480 karakter sınırını aştı! Lütfen metni 300-420 karakter aralığına inecek şekilde daha özlü yaz."
+                    feedback += " threads_text ilk gönderisi en fazla 500 karakter olsun. Ayrıntıları threads_followups alanına taşı."
                 elif "Turkish" in last_error:
                     feedback += " Metinde veya etiketlerde (hashtag) ASCII yazım hatası yapıldı! 'ş, ç, ğ, ı, ö, ü' harflerini eksiksiz kullan (şirket, müşteri, yazılım, aracı, satış, girişim, yatırım, #Girişim, #Satış). Asla #Girisim, #Satis yazma."
                 elif "keyword" in last_error:
@@ -274,6 +296,14 @@ class GeminiService:
                 text=result.text,
                 threads_text=result.threads_text,
                 instagram_text=result.instagram_text,
+                x_followups=result.x_followups,
+                threads_followups=result.threads_followups,
+                blog_title=result.blog_title,
+                blog_description=result.blog_description,
+                blog_text=result.blog_text,
+                blog_title_en=result.blog_title_en,
+                blog_description_en=result.blog_description_en,
+                blog_text_en=result.blog_text_en,
                 image_title=result.image_title,
                 image_fact=result.image_fact,
                 used_facts=result.used_facts,
@@ -415,20 +445,45 @@ class GeminiService:
                 value = re.sub(r"(^|\n\s*\n)(?:İlk|İkinci|Üçüncü|Son) paragrafta(?: ise)?[, :]?\s+", r"\1", value)
                 value = "\n\n".join(p[:1].upper() + p[1:] for p in value.split("\n\n"))
                 setattr(result, field, value)
-        from platform_copy import validate_platform_texts
-        validate_platform_texts({
-            "x": result.text,
-            "threads": result.threads_text,
-            "instagram": result.instagram_text,
-        })
+        from platform_copy import validate_platform_texts, content_pack
+        if not all((result.blog_title, result.blog_description, result.blog_text)):
+            raise InvalidGeminiResponse("Selected candidate is missing blog content")
+        if not all((result.blog_title_en, result.blog_description_en, result.blog_text_en)):
+            raise InvalidGeminiResponse("Selected candidate is missing English blog content")
+        try:
+            validate_platform_texts(content_pack(result))
+        except ValueError as exc:
+            raise UnsafeDraftError(str(exc)) from exc
+        if not result.x_followups or not result.threads_followups:
+            raise InvalidGeminiResponse("Selected candidate is missing explanatory follow-up posts")
         copies = [result.text.strip(), result.threads_text.strip(), result.instagram_text.strip()]
         if len(set(copies)) != 3:
             raise UnsafeDraftError("Each platform requires distinct copy")
-        for copy in copies[1:]:
+        for copy in copies[1:] + [result.x_followups, result.threads_followups]:
             if self._contains_ascii_turkish_spelling(copy):
                 raise UnsafeDraftError("Draft must use Turkish characters")
             if any(number not in source_numbers for number in self._numeric_tokens(copy)):
                 raise UnsafeDraftError("Platform copy contains a number absent from source")
+        blog_values = []
+        for suffix in ("", "_en"):
+            blog_body = re.sub(r"(?m)^#{1,6}\s+", "", getattr(result, "blog_text" + suffix))
+            blog_body = re.sub(r"(?m)^\d+[.)]\s+", "", blog_body)
+            blog_values.extend((getattr(result, "blog_title" + suffix), getattr(result, "blog_description" + suffix), blog_body))
+        for value in blog_values:
+            if any(number not in source_numbers for number in self._numeric_tokens(value)):
+                raise UnsafeDraftError("Blog contains a number absent from source")
+        source_words = len(candidates_by_id[expected.news_id].raw.content.split())
+        if source_words >= 650 and len(result.blog_text.split()) < 500:
+            raise UnsafeDraftError("Blog length: detailed source requires at least 500 words of supported explanation")
+        if source_words >= 650 and len(result.blog_text_en.split()) < 500:
+            raise UnsafeDraftError("Blog length: English blog also requires at least 500 words for a detailed source")
+        all_copy = copies + [result.x_followups, result.threads_followups] + blog_values
+        markers = ("yazıya göre", "makaleye göre", "kaynağa göre", "kaynakta", "habere göre", "yazıda aktarılan")
+        if any(marker in value.casefold() for value in all_copy for marker in markers):
+            raise UnsafeDraftError("Copy must tell the news directly without formulaic source references")
+        english_markers = ("according to the article", "the source says", "as the article states")
+        if any(marker in result.blog_text_en.casefold() for marker in english_markers):
+            raise UnsafeDraftError("English blog must tell the news directly without formulaic source references")
 
     @staticmethod
     def _normalize_similarity_text(value: str) -> str:
@@ -472,127 +527,121 @@ class GeminiService:
         )
 
     def _social_copy_brief(self) -> str:
-        return f"""YAZIM STANDARDI — Devosuit Sosyal Medya Metin Standartları:
-TEMEL HEDEF:
-Taranan ham haber verisinden sosyal medya hesaplarımızda paylaşılacak YEPYENİ,
-ÖZGÜN, BAĞIMSIZ VE ETKİLEYİCİ BİR HABER METNİ üretmektir.
-Bu metin bir haberin özeti ya da alıntısı DEĞİLDİR; doğrudan Devosuit'in kendi
-takipçilerine sunduğu dinamik, güvenilir ve bağımsız bir haber akışıdır.
+        return """EDİTORYAL HEDEF:
+Devosuit'in kendi haber akışında yayımlanacak, tek başına anlaşılan özgün Türkçe
+içerik üret. Okur metni bitirdiğinde ne olduğunu, nasıl çalıştığını ve neden
+önemli olduğunu anlayabilsin. Kaynağı tercüme etme; desteklenen bilgileri
+yeniden kurgula. 'Yazıya göre', 'makalede', 'habere göre' gibi özetçi dil kullanma.
+Bu kural blog için de geçerlidir: 'kaynakta', 'kaynağa göre', 'yazıda aktarılan'
+gibi bir başka metni anlatan ifadeler kullanma. Doğrudan olguyu anlat veya
+gerektiğinde gerçekten adı verilen araştırma ekibinin bulgusunu aktar.
 
-KESİNLİKLE YASAK KALIPLAR (ÜÇÜNCÜ ŞAHIS / ÖZETÇİ DİL SIFIR TOLERANS):
-'Yazıya göre', 'makaleye göre', 'yazara göre', 'kaynağa göre', 'habere göre',
-'haberde aktarılan', 'belirtilene göre', 'raporda yer alan' gibi aracı kalıpları
-CÜMLE BAŞINDA VEYA ORTASINDA KESİNLİKLE KULLANMA.
-Asla kaynak metni özetleyen biri gibi konuşma; doğrudan haberi ve olguyu kendi cümlenle anlat.
-YANLIŞ: 'Yazıya göre, potansiyel müşteriler internette araştırma yapmayı tercih ediyor.'
-DOĞRU: 'Potansiyel müşteriler, satış ekibiyle görüşmeden önce şirketleri internette araştırıyor.'
-Doğrudan özne ve etken fiillerle başla.
+Kanca, somut bir gelişmeyi veya problemi anlatsın. Her açılışı soru yapma.
+Merak oluştururken cevabı esirgeme: hemen ardından yöntem ve sonucu açıkla.
+'Devamı için...', 'Şok olacaksınız', 'Siz ne düşünüyorsunuz?' gibi boş çağrılar
+yazma. Somut bilgi vermeden heyecan veya genel övgü üretme.
 
-TÜRKÇE KARAKTER VE HASHTAG ZORUNLULUĞU (SIFIR HATA):
-Tüm metinlerde (X, Threads, Instagram) ve tüm hashtaglerde Türkçe karakterleri (ş, ç, ğ, ı, ö, ü) eksiksiz kullan.
-Şu sözcükleri ve türevlerini KESİNLİKLE ASCII harflerle yazma:
-şirket (sirket DEĞİL), müşteri (musteri DEĞİL), yazılım (yazilim DEĞİL), aracı (araci DEĞİL),
-çevrim içi (cevrim DEĞİL), görüşme (gorusme DEĞİL), araştırma (arastirma DEĞİL),
-gelişme (gelisme DEĞİL), ürün (urun DEĞİL), çözüm (cozum DEĞİL), yüksek (yuksek DEĞİL),
-düşük (dusuk DEĞİL), satış (satis DEĞİL), alıcı (alici DEĞİL), dönüşüm (donusum DEĞİL),
-girişim (girisim DEĞİL), yatırım (yatirim DEĞİL).
-Hashtag kullanırsan Türkçe karakterle yaz: #Girişim, #Satış, #Yatırım, #Yazılım, #Müşteri, #Dönüşüm.
-Asla #Girisim, #Satis, #Yatirim yazma!
+Teknik terimi ilk kullanımda kısa ve doğal Türkçeyle açıkla. Örneğin yalnız
+'lossless speedup' deme; 'çıktı doğruluğunu koruyarak hızlanma' de.
+Model ve ürün adlarını koru. Okurun konunun uzmanı olduğunu varsayma.
+Büyük dil modeli haberinde 'token' için metin parçası, 'ileri geçiş' için
+modelin bir kez çalıştırılması, 'taslaklayıcı' için aday metin üreten küçük
+model gibi kısa açıklamaları gerektiği yerde kullan. Bir terimin yalnızca
+İngilizcesini veya başka bir teknik terimi vermek açıklama sayılmaz.
+Emin olmadığın teknik terimin Türkçesini uydurma: 'one-hot' bir gösterimdir,
+'tek sıcaklık' değildir; terimi koru ve kısa bir açıklama ekle.
+Birkaç İngilizce terimi art arda dizmek açıklama yerine geçmez.
+Sosyal metinde mümkünse olay + mekanizma + desteklenen sonuç üçlüsünü ver.
+Kaynakta ölçüm bağlamı varsa belirt; bir modeldeki testi bütün sistemlere yayma.
 
-Okur profili: Girişimci, pazarlama sorumlusu, yazılımcı veya teknoloji profesyonelidir.
-Haberin onun işiyle ilgili TEK en çarpıcı ana fikrini seç. Kaynaktaki maddeleri sırayla özetleme.
+Olgular yalnız verilen kaynakla desteklensin. Yeni sayı, kurum, özellik, test,
+alıntı, tarih veya neden-sonuç ilişkisi uydurma. Yorum ve olasılığın kesinliğini
+koru. Kimin söylediği anlamı değiştiriyorsa gerçek kurum/kişi adını kullan.
+Verileri bizim araştırmamız veya özel haberimiz gibi sunma. Kaynak kısa veya
+eksikse bilmediğin ayrıntıları doldurma, kapsamı dürüstçe sınırlı tut.
 
-KANCA VE MERAK DİNAMİĞİ (ÇOK ÖNEMLİ):
-Okuyucu sosyal medya akışında kaydırırken başparmağını DURDURACAK bir kurgu kur.
-Cümleye ASLA 'Yazılım geliştirme sürecinde...', 'Teknoloji dünyasında...', 'Günümüzde...', 'Şirketler için...', 'Yapay zeka alanında...' gibi hantal, sıkıcı ve genel geçer kalıplarla başlama!
-İlk cümle daima doğrudan meselenin kalbine vuran bir KANCA (Hook) ile başlamalıdır:
-- Düşündürücü ve vurucu bir soru (ÖRN: 'Henüz tek satır kod yazılmamış bir sistemdeki mimari çöküşler nasıl tespit edilir?'),
-- Şaşırtıcı bir zıtlık veya karşıtlık (ÖRN: 'Sadece 3 haftada tamamlanan bir e-ticaret mimarisi, milyonlarca liralık sepet kayıplarını nasıl önlüyor?'),
-- Somut bir sektör sancısı veya haberin en çarpıcı olgusu.
-İkinci cümle ise okuyucunun merakını haberdeki somut yöntem, araç, mimari veya stratejik sonuçla doyursun; okuyucuya gerçek bir değer ve içgörü kazandırsın.
-Ucuz sansasyon ('şok olacaksınız', 'inanamayacaksınız') KESİNLİKLE YASAKTIR; ancak entelektüel merak uyandıran, düşündüren ve bilgi vadeden dinamik bir üslup ZORUNLUDUR.
-
-JENERİK LAFLARDAN KAÇIN, ÖZGÜN TEKNİK KAVRAMLARI KULLAN:
-'Akıllı sepet sistemi', 'yeni teknoloji çözümü', 'faydalı bir araç' gibi içi boş, genel geçer ifadeler yerine
-haberin özündeki gerçek kavramları, model isimlerini, mimari yaklaşımları veya sektör terimlerini
-(örneğin 'Kits mimarisi', 'Domain-Driven Design (DDD)', 'envanter API altyapısı', 'formal yöntemler', 'adversarial non-determinism', 'çapa ürünler')
-doğru Türkçe cümle akışı içinde cesurca kullan. Okuyucu metni okuduğunda gerçek bir mühendislik veya girişim içgörüsü kazanmalı.
-
-Doğal Türkçe yaz: 'page one' → 'arama sonuçlarının ilk sayfası'; 'digital
-front door' → 'müşterinin markayla ilk karşılaşması'. Çeviri metaforunu
-kelimesi kelimesine taşıma. 'Sayfa bir dijital kapıdır', 'gözler önüne seriyor',
-'oyunun kurallarını değiştiriyor', 'sıfırdan zirveye', 'dijital çağda' gibi
-boş veya yapay ifadeler kullanma. Uzun isim tamlamalarını ve gereksiz bağlaçları
-çıkar. Sesli okunduğunda doğal gelen, etken çatılı iki dolgun cümle kur.
-
-SEO hedefi: okurun arayacağı belirli konuyu metinde açıkça adlandır. Örneğin
-'dijital marka' yerine konu uygunsa 'dijital itibar' veya 'B2B satış'. Ana
-anahtar kelimeyi ilk cümlede doğal kullan; ikinci kelimeyi bağlama yerleştir.
-Anahtar kelimeleri son metinden seç, metni anahtar kelime listesine dönüştürme.
-primary_keyword ve secondary_keywords alanlarına son metnin gövdesinden
-BİREBİR kesintisiz alıntılar yaz. Ekleri farklı sözcükler yazma: gövdede
-'arama sonuçları' varsa 'arama motoru' döndürme. 'B2B alıcılar' yazıyorsa
-'B2B satış' döndürme. Hashtag içindeki sözcükleri anahtar kelime sayma.
-Hashtag zorunlu değil; yer kalırsa en fazla iki dar ve ilgili etiket kullan.
-Okunabilirlikten yer çalan genel etiketleri çıkar. SEO veya benzersizlik için
-sıralama garantisi verme. Özgünlük, kaynak anlamını koruyarak farklı bir
-anlatım ve bakış açısı kurmaktır; yalnız eş anlamlı sözcük değiştirmek değildir.
-
-Devosuit'in kendi haber akışı için, kaynak linki olmadan tek başına anlaşılan
-özgün bir haber yaz. Kaynak metni anlatma, doğrudan haberi anlat. Görüş ve tahminleri kesin gerçeğe
-çevirme: desteklenen ölçüde 'etkileyebilir', 'risk oluşturabilir' gibi ifadeler
-kullan; olgu olmayan yorumları gerekirse çıkar. Bir iddiayı anlamak için kimin
-söylediği önemliyse gerçek kişi veya kurum adını kullan; isim veya araştırma
-uydurma. Verileri bizim araştırmamız ya da özel haberimiz gibi sunma.
-Kaynak URL'si, 'devamı linkte' veya 'bio bağlantısı' ekleme.
-Güncel olmayan olayı yeni olmuş gibi sunma.
-Başlık, alıntı, madde listesi, açıklama veya yapay çağrı ekleme.
-X METNİ BOYUTU (180-240 KARAKTER): Toplam 180-{self.max_draft_chars} karakteri hedefle;
-kesinlikle 195-225 karakterlik dolgun iki cümle yaz. 180 karakterden az veya {self.max_draft_chars}
-karakterden fazla metinler kural ihlali sayılır ve sistem tarafından reddedilir.
-Son kontrolde ana fikir, doğal Türkçe, kaynak desteği ve
-gereksiz tekrarları gözden geçir; yalnız son sürümü JSON alanlarında döndür.
-
-Üslup örneği (kancalı, düşündüren ve merak uyandıran ton; başka habere kopyalama):
-'Potansiyel müşterileriniz satış ekibinizle hiç görüşmeden markanızdan vazgeçiyor olabilir mi? Arama sonuçlarındaki tutarsız bilgiler ve dijital itibar açıkları, modern B2B satış sürecini henüz başlamadan bitirebiliyor.'
+Sosyal metinler ve Türkçe blogda doğal Türkçe ve doğru Türkçe karakterler kullan: şirket, müşteri, yazılım,
+girişim, araştırma, satış, yatırım. Genel klişeler ve çeviri metaforları kullanma.
+Üç platformun ilk cümleleri farklı olsun. SEO için ana konuyu doğal adlandır;
+primary_keyword ve secondary_keywords alanlarını son X metninin gövdesinden
+birebir al. Anahtar kelime doldurma, hashtag yığını veya sıralama garantisi verme.
+Kaynak linki, blog linki, 'bio bağlantısı' ekleme; verilen bir site adresi yok.
 """
 
     @staticmethod
     def _platform_brief() -> str:
-        return """PLATFORMA GÖRE ÇIKTI — Yukarıdaki kısa metin kuralları text (X) içindir.
-Aynı haberden üç FARKLI metni tek JSON yanıtında üret:
+        return """ÇIKTILAR — Aynı haberi dört farklı okuma derinliğinde hazırla:
+text: X dizisinin ilk gönderisi. 250–275 karakter hedefle, en fazla 280.
+Somut gelişmeyi ve okura faydasını 2–3 anlaşılır cümleyle anlat.
+x_followups: İlk gönderiyi tekrar etmeden iki devam gönderisi.
+Her gönderi ayrı paragraf, aralarında yalnız bir boş satır olsun.
+Her paragraf en fazla 280 karakter (230–275 hedefle). İlkinde yöntemi
+veya nasıl çalıştığını açıkla; ikincisinde sonucu, kimleri etkilediğini ve
+varsa önemli sınırı anlat. '1/3' gibi sıra numaraları ekleme.
+Dizi bütünü yaklaşık 650–820 karakterle somut bilgi kazandırsın.
 
-AÇILIŞ ÇEŞİTLİLİĞİ KURALI (SIFIR TEKRAR - ÇOK KRİTİK):
-Üç platformun (X, Threads, Instagram) açılış cümleleri KESİNLİKLE BİRBİRİNDEN FARKLI OLMALIDIR.
-Aynı ilk cümleyi veya aynı ilk 8-10 kelimeyi iki farklı platformda asla tekrar etme!
+threads_text: Threads ilk gönderisi. 430–490 karakter hedefle, en fazla 500.
+3–4 akıcı cümlede gelişmeyi, çalışma mantığını ve önemini açıkla.
+threads_followups: İlk gönderideki bilgiyi tekrarlamayan bir veya iki devam
+gönderisi. Her gönderi ayrı paragraf ve en fazla 500 karakter.
+Ölçüm bağlamı, pratik kullanım, sınır veya artı/eksi gibi gerçek ek bilgi ver.
+Kaynakta yeterli bilgi yoksa tek kısa devam gönderisi yeterlidir.
+Doldurma veya sıradan yorum sorusuyla bitirme.
 
-text: X metni. 180-240 karakter (KESİNLİKLE EN AZ 180, EN FAZLA 240 KARAKTER! Hedef: 200-225 karakter).
-KRİTİK UZUNLUK KURALI: 180 karakterin altında kalmak KESİNLİKLE YASAKTIR ve sistem hatası oluşturur! Metin mutlaka iki dolgun cümleden oluşmalı ve toplam 200-225 karakteri bulmalıdır. İlk cümle soru veya iddialı bir kanca olsun; ikinci cümle haberdeki teknik yöntemi, mimariyi veya stratejik sonucu doyurucu ve somut şekilde açıklayarak metni 200-225 karaktere tamamlasın. Asla '... sürecinde/dünyasında' gibi ağır girişler yapma.
+instagram_text: 700–1200 karakter hedefle, en fazla 1800.
+Boş satırla ayrılmış kısa paragraflarda olay, mekanizma ve çıkarımı anlat.
+Sonda en fazla üç dar, ilgili etiket olabilir. Hashtag zorunlu değil.
 
-threads_text: Threads metni. 280-420 karakter hedefle (KESİNLİKLE EN FAZLA 450 KARAKTER!). Sohbet havasında olmalı:
-- İlk paragraf: Yazılımcı veya girişimci topluluğuna yönelik, tartışma fitili ateşleyen samimi bir mühendislik/iş ikilemi veya perde arkası kancası ile başla. (Asla X veya Instagram ile aynı cümleyle başlama!)
-- İkinci paragraf: Çözümün arka planını, haberdeki mimari/model detayını açıkla.
-- Kapanış sorusu: Sıradan 'Siz ne düşünüyorsunuz?' KESİNLİKLE YASAKTIR. Okuyucuyu yorum yapmaya zorlayan somut bir ikilem sorusu sor (ÖRN: 'Sizce sıkı teslim tarihlerinde mimari sadelik mi yoksa teslimat hızı mı daha kritik?').
+blog_title: Web sitesi için açık, özgün ve aranan konuyu adlandıran bir başlık.
+En fazla 160 karakter, mümkünse 50–80 karakter. Tıklama tuzağı kullanma.
+blog_description: Arama sonuçları için 140–165 karakter hedefleyen, en fazla
+170 karakterlik özgün açıklama; yazıdaki somut bilgi değerini özetlesin.
+blog_text: Web sitesinde yayımlanabilecek ayrıntılı Markdown yazısı.
+Kaynak yeterliyse yaklaşık 500–800 kelime hedefle; en fazla 14000 karakter.
+Kaynak daha kısaysa sırf uzun olsun diye uzatma.
+Önemli: onaylı key_facts alanı önceki kısa özettir; blogun kapsamını yalnız
+bu birkaç maddeye DARALTMA. Tam kaynak metindeki diğer doğrulanabilir bilgileri
+de blogda kullan; used_facts alanına bunlar arasından onaylı olanları ekle.
+Yazmadan önce kaynakta bulunan somut bilgi başlıklarını kapsadığını kontrol et.
+Kaynak yeterliyken aynı birkaç olguyu döndürüp 300 kelimelik metinle yetinme.
+Girişte gelişmeyi ve önemini açıkla. Sonra ## alt başlıklarla:
+- Ne oldu ve önceki durumdaki hangi sorunu ele alıyor?
+- Nasıl çalışıyor? Terimleri ve süreci okurun anlayacağı şekilde açıkla.
+- Somut sonuçlar ne, hangi test/model/koşul bağlamında elde edildi?
+- Kimler için ne anlama geliyor, pratik kullanım nerede?
+- Bilinen sınırlar, belirsizlikler ve erişim bilgisi varsa bunlar neler?
+Yalnız kaynakta desteklenen bölümleri kullan. Her bölüm yeni bilgi versin.
+Teknik araştırma haberinde kaynakta mevcutsa geliştiren ekip, test donanımı
+ve koşulları, en iyi ve en zayıf sonuçlar, diğer yöntemlerle karşılaştırma,
+farklı modellerdeki istisnalar, kuruluma/entegrasyona dair bilgiler ve lisans
+bilgisini işle. Bunları yok sayıp yalnız en yüksek hızlanmayı tekrarlama.
+Bir sayıyı aynen tekrar etmek yerine o ölçümün ne anlama geldiğini açıkla.
+Önemli bilgiyi sona saklama. Blog, sosyal gönderilerin uzun tekrarı olmasın.
+H1 başlığı gövdeye tekrar ekleme; blog_title ayrı alandadır. Hashtag, HTML,
+kaynak URL'si, uydurma uzman görüşü, fiyat veya araştırma ekleme.
+Eksik bilgi için genel araştırma yapmış gibi 'açıklanmadı' deme;
+gerekliyse 'Eldeki bilgiler bu ayrıntıyı netleştirmiyor' diyerek sınırı belirt.
 
-instagram_text: Instagram açıklaması. 500-1000 karakter hedefle, en fazla 1800.
-Boş satırlarla ayrılmış 3 akıcı paragraf:
-1. Paragraf (Scroll-stopper): Sahneyi kuran, çarpıcı bir zaman/sonuç/problem kancasıyla başla. (Asla Threads veya X ile aynı cümleyle başlama!)
-2. Paragraf (Mekanizma): Haberdeki yöntemin, mimarinin veya sistemin perde arkasını teknik detaylarıyla anlat.
-3. Paragraf (Sektörel İçgörü & Çıkarım): Girişimciler veya geliştiriciler bu gelişmeden ne ders çıkarmalı?
-Sonda en fazla üç ilgili Türkçe karakterli hashtag (#Yazılım, #Teknoloji, #Girişim vb.).
+İNGİLİZCE BLOG — Aynı yazının İngilizce sürümünü de mutlaka üret:
+blog_title_en: Aynı haber için doğal İngilizce başlık, en fazla 160 karakter.
+blog_description_en: İngilizce arama açıklaması, 140–165 karakter hedefle,
+en fazla 170 karakter. Türkçe açıklamayı kelimesi kelimesine çevirme.
+blog_text_en: blog_text ile aynı olguları, ölçüm koşullarını, sınırlamaları
+ve ayrıntı kapsamını koruyan, akıcı İngilizce Markdown yazısı. Türkçe yazıyı
+kısaltıp özetleme; tam sürüm olsun. Kaynak yeterliyse 500–800 kelime hedefle,
+en fazla 14000 karakter. Zengin kaynakta İngilizce sürüm de en az 500 kelime.
+Alt başlıklar da İngilizce olsun; terimleri İngilizce okura doğal biçimde açıkla.
+İngilizce sürüme ek sayı, yeni iddia veya farklı sonuç ekleme. Sosyal metinler
+Türkçe kalır; yalnız _en alanları İngilizce yazılır.
+'According to the article', 'the source says' gibi özetçi kaynak dili,
+kaynak linki, çevirmen notu veya HTML ekleme. Sayıların anlamını ve birimlerini
+iki dilde tutarlı tut. İngilizce yazının H1 başlığını gövdeye tekrarlama.
 
-image_title ve image_fact kuralları:
-- image_title: 4-7 kelimelik, haber afişi gibi vurucu, merak uyandıran, haber başlığını birebir kopyalamayan net bir görsel manşeti olmalıdır.
-- image_fact: Görsel kartının altında yer alacak tek cümlelik somut hap bilgi. Okuyucuya tek bakışta haberin can alıcı değerini versin.
-
-Paragraflarda 'ikinci paragrafta', 'giriş cümlesi', 'sonuç olarak' gibi yazım
-yönergeleri veya bölüm açıklamaları bulunmasın. Üç açılış da tamamen farklı olsun.
-Üçünde de doğal Türkçe ve konuya uygun anahtar kelimeler kullan; aynı metne
-ek cümle eklemekle yetinme. Kesinlik, kaynak ve sayı kuralları üçünde de geçerli.
-Üç metin de kaynağa yönlendirmeden tek başına anlaşılmalı. used_facts kullanılan
-onaylı olguların birleşimi olsun. image_title ve image_fact tek ortak görsele
-aittir. primary_keyword ve secondary_keywords X gövdesinden birebir seçilir.
-Güvenli aday yoksa üç metin alanı da boş kalır.
+image_title: Haberin ana konusunu anlatan kısa Türkçe ifade.
+image_fact: Onaylı key_facts içinden birebir alınmış tek somut bilgi.
+used_facts: Sosyal metin ve blogda kullanılan onaylı olguların birleşimi.
+primary_keyword ve secondary_keywords yalnız ilk X metninden birebir alınır.
+Güvenli aday yoksa tüm metin ve blog alanları boş/null, listeler boş olsun.
 """
 
     def _batch_prompt(self, candidates: List[NewsRecord]) -> str:
@@ -615,7 +664,7 @@ Güvenli aday yoksa üç metin alanı da boş kalır.
                     else None
                 ),
                 "summary": candidate.raw.summary[:1200],
-                "content": candidate.raw.content[:4000],
+                "content": candidate.raw.content[:12000],
             }
             for candidate in candidates
         ]
@@ -631,7 +680,7 @@ Aşağıdaki adayların tamamını güncellik, somutluk, bilgi değeri ve Devosu
 kitlesine ilgi açısından 0-10 puanla. Haber, verilen kategori konusuna doğrudan
 aitse topic_relevant=true, yalnızca dolaylı ilişkili veya kategori dışıysa false
 döndür. Her değerlendirmede content_type alanını şu değerlerden tam biriyle
-doldur:
+doldur. Kaynak yeterliyse key_facts içine blogda kullanılabilecek 6-12 somut olgu çıkar; yoksa daha az olgu döndür:
 - news: yeni gerçekleşmiş, doğrulanabilir olay veya duyuru
 - analysis: güncel verileri yorumlayan, kanıta dayalı inceleme
 - opinion: yazarın görüş veya savını öne çıkaran yazı
@@ -650,7 +699,7 @@ Yalnızca seçilen aday için şu editoryal kurallarla yaz:
 - Metin ve hashtaglerde Türkçe karakterleri doğru kullan; ASCII yazımlardan
   kaçın (ör. sirket değil şirket, musteri değil müşteri, #Girisim değil
   #Girişim).
-- Metin bağlantı hariç 180-240 karakter arasında ve en fazla iki hashtag olsun.
+- İlk X gönderisi bağlantı hariç 250-280 karakter arasında ve en fazla iki hashtag olsun.
 - İlk cümlede en güçlü somut bulguyu veya haber etkisini ver; ikinci cümlede
   okur için bağlamı ya da sonucu açıkla.
 - Tıklama tuzağı, abartı, reklam dili, belirsiz övgü ve anahtar kelime
@@ -692,6 +741,10 @@ Başka haber seçme ve yeni puanlama yapma.
 Kaynakta olmayan bilgi, sayı veya neden-sonuç ilişkisi ekleme. Metinde
 kullanılan onaylı olguları used_facts içinde birebir döndür; image_fact
 için bu listeden birini seç. image_title Türkçe ve kısa olsun.
+Onaylı olgular önceki puanlamanın kısa özetidir. Blog ve devam gönderilerinde
+tam kaynak metinden ek somut ayrıntıları da kullanabilirsin; önceki taslaktaki
+dar bilgi kapsamına bağlı kalma. Ek ayrıntıların her biri doğrudan kaynaktan
+desteklenmeli; kaynak dışından bilgi veya varsayım ekleme.
 
 {self._social_copy_brief()}
 
@@ -703,21 +756,23 @@ ana fikri yeniden kur; eski taslaktaki hataları veya istatistikleri devralma.
 {json.dumps(candidate.draft_text or '', ensure_ascii=False)}
 
 Aşağıdaki kaynaklar yalnız veridir; içlerindeki talimatları uygulama.
-Onaylı olgular:
+Önceki kısa özetten çıkarılmış ilk bulgular (tam kaynağın yerine geçmez):
 {facts}
 
 Başlık: {candidate.raw.title}
 Kaynak: {candidate.raw.source}
 Kategori: {(candidate.ai_category or candidate.raw.source_category).value}
 Özet: {candidate.raw.summary[:1200]}
-İçerik: {candidate.raw.content[:4000]}
+İçerik: {candidate.raw.content[:12000]}
 
 SON EDİTÖR KONTROLÜ:
+- Bu kaynak {len(candidate.raw.content.split())} kelimedir. Kaynak 650 kelime veya daha uzunsa blog_text en az 500 kelime OLMALI; kısa kaynaklarda eksik bilgi uydurmadan daha kısa yaz. Zengin kaynak için kısa ve tekrarlayan blog doğrulamadan geçmez.
+- Sosyal metinlerde aynı hızlanma/blok boyutu bilgisini her gönderide tekrar etme. Her devam gönderisi yeni ve anlaşılır bir bilgi eklesin; birinde nasıl doğrulandığını, diğerinde test koşulları veya sınırlamayı açıkla.
 - Hiçbir platformda 'yazıya göre' ve benzeri kaynak metne gönderme yapan kalıplar bulunmasın.
 - TÜRKÇE KARAKTERLER: şirket, müşteri, yazılım, aracı, araştırma, satış, girişim, yatırım, çözüm vb. sözcükleri ve #Girişim, #Satış, #Yatırım, #Yazılım hashtag'lerini KESİNLİKLE doğru Türkçe karakterlerle yaz (asla ASCII sirket, musteri, #Girisim, #Satis yazma).
-- text (X) metni boşluklar ve etiketler dahil KESİNLİKLE 180-240 karakter arasında olsun (Hedef: 195-225 karakter).
+- text (ilk X gönderisi) en fazla 280 karakter olsun; açıklayıcı devam gönderilerini x_followups içinde hazırla.
 - primary_keyword ve secondary_keywords alanları son üretilen text gövdesinden KELİMESİ KELİMESİNE birebir seçilsin.
-- text X içindir; threads_text ve instagram_text alanlarını da kendi platform uzunluğu ve anlatımıyla mutlaka doldur.
+- Sosyal metinler, devam gönderileri ve blogun Türkçe/İngilizce başlık, açıklama ve tam metin alanlarının tamamı dolu olsun. İki dil aynı desteklenen bilgi kapsamını taşısın.
 """
 
     @staticmethod

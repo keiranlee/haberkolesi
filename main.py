@@ -17,6 +17,8 @@ from config import RSS_FEEDS, TIMEZONE, get_settings
 from database import close_pool, get_pool, initialize_database
 from gemini_service import GeminiService, GoogleGenAITransport
 from image_service import ImageService
+from ai_providers import AiProviders, ProviderBundle
+from openai_service import OpenAITransport, OpenAIImageService
 from pipeline import NewsPipeline
 from rate_limiter import AsyncRequestGate
 from repositories import PostgresRepository
@@ -124,12 +126,31 @@ async def build_app():
         max_age=timedelta(hours=settings.max_news_age_hours),
     )
     gate = AsyncRequestGate(settings.gemini_min_interval_seconds)
-    gemini = GeminiService(
-        transport=GoogleGenAITransport(settings.gemini_api_key),
-        gate=gate,
-        model=settings.gemini_model,
-    )
+    gemini = None
+    if settings.gemini_api_key:
+        gemini = GeminiService(
+            transport=GoogleGenAITransport(settings.gemini_api_key),
+            gate=gate,
+            model=settings.gemini_model,
+        )
     image_service = ImageService(settings.data_dir)
+    openai_text = None
+    openai_images = None
+    if settings.openai_api_key:
+        openai_text = GeminiService(
+            transport=OpenAITransport(settings.openai_api_key),
+            gate=AsyncRequestGate(1),
+            model=settings.openai_model,
+        )
+        openai_images = OpenAIImageService(
+            settings.openai_api_key, settings.data_dir,
+            model=settings.openai_image_model, quality=settings.openai_image_quality,
+        )
+    ai_providers = AiProviders(
+        repository,
+        gemini=ProviderBundle("gemini", gemini, image_service) if gemini is not None else None,
+        openai=ProviderBundle("openai", openai_text, openai_images) if openai_text is not None else None,
+    )
     worker = AiWorker(
         repository,
         gemini,
@@ -137,6 +158,7 @@ async def build_app():
         image_service=image_service,
         min_score=settings.gemini_min_score,
         auto_generate=False,
+        ai_providers=ai_providers,
     )
     content_runner = ScheduledContentRunner(
         repository,
@@ -147,6 +169,7 @@ async def build_app():
         max_age=timedelta(hours=settings.max_news_age_hours),
         candidate_limit=settings.candidate_limit_per_category,
         min_score=settings.gemini_min_score,
+        ai_providers=ai_providers,
     )
     x_publisher = build_x_publisher(settings, repository)
     scheduler = create_scheduler(
@@ -155,7 +178,12 @@ async def build_app():
     )
 
     async def close_resources():
-        await gemini.close()
+        if gemini is not None:
+            await gemini.close()
+        if openai_text is not None:
+            await openai_text.close()
+        if openai_images is not None:
+            openai_images.close()
         await http_client.close()
         await close_pool()
 
@@ -168,6 +196,7 @@ async def build_app():
         rate_gate=gate,
         content_runner=content_runner,
         x_publisher=x_publisher,
+        ai_providers=ai_providers,
         close_callback=close_resources,
     )
 

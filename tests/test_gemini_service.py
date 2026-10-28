@@ -119,9 +119,17 @@ def batch_payload(selected_news_id=2, text=VALID_BATCH_TEXT):
             },
         ],
         "selected_news_id": selected_news_id,
+        "x_followups": "Yeni araç, yazılım ekiplerinin kullanımına sunuldu.",
+        "threads_followups": "Ekipler çözümü kendi ihtiyaçlarına göre değerlendirebilir.",
+        "blog_title": "Yazılım ekipleri için yeni araç",
+        "blog_title_en": "A new tool for software teams",
+        "blog_description_en": "A new tool is available for software teams and their workflows.",
+        "blog_text_en": "## What happened?\n\nA new tool is available for software teams. Teams can evaluate how it fits their workflows.",
+        "blog_description": "Yeni aracın yazılım ekiplerine sunulması ve kullanım alanları.",
+        "blog_text": "## Ne oldu?\n\nYeni araç yazılım ekiplerine sunuldu.\n\n## Kimler kullanabilir?\n\nYazılım ekipleri çözümü kendi ihtiyaçlarına göre değerlendirebilir.",
         "text": text,
-        "threads_text": "Yapay zeka aracı yazılım ekiplerine sunuldu. Yazıya göre bu gelişme ekiplerin iş akışını değiştirebilir.",
-        "instagram_text": "Yazılım ekiplerine yeni yapay zeka aracı.\n\nYazıya göre yeni araç, ekiplerin günlük iş akışında kullanılabilecek bir çözüm olarak sunuluyor.",
+        "threads_text": "Yapay zeka aracı yazılım ekiplerine sunuldu. bu gelişme ekiplerin iş akışını değiştirebilir.",
+        "instagram_text": "Yazılım ekiplerine yeni yapay zeka aracı.\n\nyeni araç, ekiplerin günlük iş akışında kullanılabilecek bir çözüm olarak sunuluyor.",
         "image_title": "Yazılım ekiplerine yeni AI aracı",
         "image_fact": "Yeni araç yazılım ekiplerine sunuldu.",
         "used_facts": ["Yeni araç yazılım ekiplerine sunuldu."],
@@ -132,6 +140,42 @@ def batch_payload(selected_news_id=2, text=VALID_BATCH_TEXT):
 
 def test_api_schema_avoids_unsupported_additional_properties_keyword():
     assert "additionalProperties" not in ScoreResult.model_json_schema()
+
+
+@pytest.mark.asyncio
+async def test_regeneration_corrects_a_continuation_exceeding_post_limit():
+    record = make_record(2, title="Yazılım ekipleri için yeni araç çıktı", published_minute=2)
+    record.key_facts = ["Yeni araç yazılım ekiplerine sunuldu."]
+    bad = batch_payload(selected_news_id=2)
+    bad["content_type"] = "news"
+    bad["x_followups"] = "a" * 281
+    good = batch_payload(selected_news_id=2)
+    good["content_type"] = "news"
+    transport = FakeTransport(bad, good)
+    result = await make_service(transport).regenerate_content(record)
+    assert result.x_followups == "Yeni araç, yazılım ekiplerinin kullanımına sunuldu."
+    assert len(transport.requests) == 2
+
+
+@pytest.mark.asyncio
+async def test_long_source_requires_a_substantive_blog():
+    from dataclasses import replace
+    record = make_record(2, title="Yazılım ekipleri için yeni araç çıktı", published_minute=2)
+    record.raw = replace(record.raw, content="Kaynak ayrıntısı. " * 400)
+    payload = batch_payload(selected_news_id=2)
+    payload["evaluations"] = [payload["evaluations"][1]]
+    with pytest.raises(UnsafeDraftError, match="Blog length"):
+        await make_service(FakeTransport(payload)).evaluate_candidates([record])
+
+
+@pytest.mark.asyncio
+async def test_blog_rejects_an_invented_source_number():
+    record = make_record(2, title="Yazılım ekipleri için yeni araç çıktı", published_minute=2)
+    payload = batch_payload(selected_news_id=2)
+    payload["evaluations"] = [payload["evaluations"][1]]
+    payload["blog_text"] += "\n\nEkipler 2039 yılında kullanacak."
+    with pytest.raises(UnsafeDraftError, match="Blog contains a number"):
+        await make_service(FakeTransport(payload)).evaluate_candidates([record])
 
 
 @pytest.mark.asyncio
@@ -434,15 +478,23 @@ async def test_b2b_opinion_caption_preserves_attribution_keywords_and_percentage
             "content_type": "opinion",
         }],
         "selected_news_id": 7,
+        "x_followups": "Dijital itibar, alıcıların ilk izlenimi için önemli olabilir.",
+        "threads_followups": "B2B alıcılar satış görüşmesinden önce araştırmayı tercih ediyor.",
+        "blog_title": "B2B satışta dijital itibar",
+        "blog_title_en": "Digital reputation in B2B sales",
+        "blog_description_en": "How research before sales conversations relates to digital reputation.",
+        "blog_text_en": "## Digital reputation\n\nBuyers prefer to research online before speaking with a sales representative.",
+        "blog_description": "Dijital itibar ve satış görüşmesi öncesinde araştırma tercihi.",
+        "blog_text": "## Dijital itibar\n\nAlıcılar satış görüşmesi öncesinde çevrim içi araştırmayı tercih ediyor.",
         "text": (
             "B2B satış süreci, ilk görüşmeden önce arama sonuçlarında başlıyor. "
-            "Yazıda aktarılan veriye göre alıcıların %68’i çevrim içi araştırmayı "
+            "alıcıların %68’i çevrim içi araştırmayı "
             "tercih ediyor; dijital itibar müşteri edinme maliyetini etkileyebiliyor. "
             "#B2B #Dijitalİtibar"
         ),
         "image_title": "B2B satışta dijital itibar",
-        "threads_text": "Yazıya göre dijital itibar, B2B satış sürecini etkileyebiliyor. Alıcılar görüşmeden önce araştırmayı tercih ediyor.",
-        "instagram_text": "Dijital itibar neden önemli?\n\nYazıya göre müşterilerin satış görüşmesinden önce araştırmayı tercih etmesi, arama sonuçlarını markalar için önemli hale getiriyor.",
+        "threads_text": "dijital itibar, B2B satış sürecini etkileyebiliyor. Alıcılar görüşmeden önce araştırmayı tercih ediyor.",
+        "instagram_text": "Dijital itibar neden önemli?\n\nmüşterilerin satış görüşmesinden önce araştırmayı tercih etmesi, arama sonuçlarını markalar için önemli hale getiriyor.",
         "image_fact": fact,
         "used_facts": [fact],
         "primary_keyword": "B2B satış",
@@ -467,7 +519,7 @@ async def test_batch_request_sends_complete_discoverability_editorial_brief():
                 "content_type",
                 "primary_keyword",
                 "secondary_keywords",
-                "180-240",
+                "blog_text",
                 "opinion",
                 "promotional",
                 "Türkçe karakter",
@@ -497,6 +549,14 @@ async def test_regenerate_content_uses_compact_new_editorial_prompt_for_same_new
     transport = FakeTransport(
         {
             "text": VALID_BATCH_TEXT,
+            "x_followups": "Yeni araç yazılım ekiplerine sunuldu.",
+            "threads_followups": "Ekipler aracı kendi iş akışları için değerlendirebilir.",
+            "blog_title": "Yazılım ekipleri için yeni araç",
+            "blog_title_en": "A new tool for software teams",
+            "blog_description_en": "A new tool is available for software teams and their workflows.",
+            "blog_text_en": "## What happened?\n\nA new tool is available for software teams.",
+            "blog_description": "Yeni aracın yazılım ekiplerine sunulması ve kullanım alanları.",
+            "blog_text": "## Ne oldu?\n\nYeni araç yazılım ekiplerine sunuldu.",
             "threads_text": "Yazılım ekiplerine yeni araç sunuldu. Ekipler bu çözümü iş akışlarında değerlendirebilir.",
             "instagram_text": "Yazılım ekiplerine yeni araç.\n\nYeni çözüm yazılım ekiplerinin kullanımına sunuldu. İş akışlarına nasıl dahil edileceği ekiplerin ihtiyaçlarına bağlı.",
             "image_title": "Yazılım ekiplerine yeni AI aracı",
@@ -513,7 +573,7 @@ async def test_regenerate_content_uses_compact_new_editorial_prompt_for_same_new
     assert result.text == VALID_BATCH_TEXT
     assert len(transport.requests) == 1
     assert transport.requests[0]["response_schema"].__name__ == "RegeneratedContentResult"
-    assert "180-240" in transport.requests[0]["prompt"]
+    assert "blog_text" in transport.requests[0]["prompt"]
     assert "primary_keyword" in transport.requests[0]["prompt"]
     assert "opinion" in transport.requests[0]["prompt"]
 
@@ -543,6 +603,29 @@ async def test_batch_removes_observed_paragraph_scaffolding():
     record = make_record(2, title="Yeni geliştirici çözümü", published_minute=2)
     payload = batch_payload()
     payload["evaluations"] = [payload["evaluations"][1]]
-    payload["threads_text"] = "Yeni araç ekiplerin kullanımına sunuldu.\n\nİkinci paragrafta ise yazıya göre ekipler aracı kullanabilir."
+    payload["threads_text"] = "Yeni araç ekiplerin kullanımına sunuldu.\n\nİkinci paragrafta ise ekipler aracı kullanabilir."
     result = await make_service(FakeTransport(payload)).evaluate_candidates([record])
-    assert result.threads_text.endswith("\n\nYazıya göre ekipler aracı kullanabilir.")
+    assert result.threads_text.endswith("\n\nEkipler aracı kullanabilir.")
+
+
+@pytest.mark.asyncio
+async def test_blog_rejects_formulaic_source_references():
+    record = make_record(2, title="Yazılım ekipleri için yeni araç çıktı", published_minute=2)
+    payload = batch_payload(selected_news_id=2)
+    payload["evaluations"] = [payload["evaluations"][1]]
+    payload["blog_text"] += "\n\nKaynakta bu aracın sunulduğu belirtiliyor."
+    with pytest.raises(UnsafeDraftError, match="source references"):
+        await make_service(FakeTransport(payload)).evaluate_candidates([record])
+
+
+@pytest.mark.asyncio
+async def test_selected_news_requires_english_blog_and_checks_its_numbers():
+    record = make_record(2, title="Yazılım ekipleri için yeni araç çıktı", published_minute=2)
+    payload = batch_payload(selected_news_id=2)
+    payload["evaluations"] = [payload["evaluations"][1]]
+    payload["blog_text_en"] = None
+    with pytest.raises(InvalidGeminiResponse, match="English blog"):
+        await make_service(FakeTransport(payload)).evaluate_candidates([record])
+    payload["blog_text_en"] = "The tool will be available in 2039."
+    with pytest.raises(UnsafeDraftError, match="number absent"):
+        await make_service(FakeTransport(payload)).evaluate_candidates([record])

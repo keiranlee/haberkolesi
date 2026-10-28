@@ -142,15 +142,15 @@ class OfficialXClient:
         """Resmi API için oturum sıfırlama no-op'tur (statik anahtarlar)."""
         pass
 
-    async def post(self, text: str, image_path: Optional[str] = None) -> str:
+    async def post(self, text: str, image_path: Optional[str] = None, *, reply_to: Optional[str] = None) -> str:
         if not self.configured:
             raise XNotConfiguredError(
                 "Resmi X API kimlik bilgileri eksik. "
                 "X_API_KEY, X_API_KEY_SECRET, X_ACCESS_TOKEN ve X_ACCESS_TOKEN_SECRET tanımlanmalıdır."
             )
-        return await asyncio.to_thread(self._sync_post, text, image_path)
+        return await asyncio.to_thread(self._sync_post, text, image_path, reply_to)
 
-    def _sync_post(self, text: str, image_path: Optional[str] = None) -> str:
+    def _sync_post(self, text: str, image_path: Optional[str] = None, reply_to: Optional[str] = None) -> str:
         import tweepy
 
         media_ids = None
@@ -179,7 +179,10 @@ class OfficialXClient:
                 access_token=self.access_token,
                 access_token_secret=self.access_token_secret,
             )
-            response = client.create_tweet(text=text, media_ids=media_ids)
+            options = {"text": text, "media_ids": media_ids}
+            if reply_to:
+                options["in_reply_to_tweet_id"] = reply_to
+            response = client.create_tweet(**options)
             if not response or not response.data or "id" not in response.data:
                 raise XPublishError("X API yanıtında tweet kimliği (id) bulunamadı")
             tweet_id = str(response.data["id"])
@@ -295,7 +298,7 @@ class TwikitXClient:
         except Exception:
             logger.debug("X çerezleri kaydedilemedi", exc_info=True)
 
-    async def post(self, text: str, image_path: Optional[str] = None) -> str:
+    async def post(self, text: str, image_path: Optional[str] = None, *, reply_to: Optional[str] = None) -> str:
         client = await self._ensure_client()
         try:
             media_ids = None
@@ -304,7 +307,10 @@ class TwikitXClient:
                 media_ids = [media_id]
             elif image_path:
                 logger.warning("Görsel bulunamadı, tweet görselsiz atılacak: %s", image_path)
-            tweet = await client.create_tweet(text=text, media_ids=media_ids)
+            options = {"text": text, "media_ids": media_ids}
+            if reply_to:
+                options["reply_to"] = reply_to
+            tweet = await client.create_tweet(**options)
         except XPublishError:
             raise
         except Exception as exc:
@@ -356,10 +362,12 @@ class XPublisher:
         self.now = now
         self.sleeper = sleeper or asyncio.sleep
         self.rng = rng or random.Random()
-        self._lock = asyncio.Lock()
+        self._lock = None
 
     async def publish_news(self, news_id: int) -> str:
         """Tek bir onaylı haberi X'te paylaşır ve tweet kimliğini döndürür."""
+        if self._lock is None:
+            self._lock = asyncio.Lock()
         async with self._lock:
             record = await self.repository.get_news(news_id)
             if record.x_published_at is not None:
@@ -367,6 +375,10 @@ class XPublisher:
             if record.state is not NewsState.APPROVED:
                 raise ValueError("Yalnız onaylanmış haberler X'te paylaşılabilir")
             text = tweet_text_for(record)
+            from platform_copy import split_followups
+            posts = [text] + split_followups((record.platform_texts or {}).get("x_followups", ""))
+            if any(len(post) > X_MAX_CHARS for post in posts):
+                raise ValueError("X dizisinde bir gönderi 280 karakter sınırını aşıyor")
 
             published_today = await self.repository.count_x_published_since(
                 istanbul_day_start(self.now())
@@ -377,7 +389,17 @@ class XPublisher:
                 )
 
             try:
-                tweet_id = await self._post_with_reauth(text, record.image_path)
+                ids = list(record.x_thread_post_ids or [])
+                if len(ids) > len(posts):
+                    raise XPublishError("Paylaşılmış dizi ile taslak uyuşmuyor")
+                for index in range(len(ids), len(posts)):
+                    post_id = await self._post_with_reauth(
+                        posts[index], record.image_path if index == 0 else None,
+                        reply_to=ids[-1] if ids else None,
+                    )
+                    await self.repository.save_x_thread_post(news_id, post_id)
+                    ids.append(post_id)
+                tweet_id = ids[0]
             except XRateLimitedError as exc:
                 logger.warning("X limitine takıldı — haber #%d: %s", news_id, exc)
                 raise
@@ -390,15 +412,16 @@ class XPublisher:
             logger.info("X'te paylaşıldı — haber #%d, tweet %s", news_id, tweet_id)
             return tweet_id
 
-    async def _post_with_reauth(self, text: str, image_path: Optional[str]) -> str:
+    async def _post_with_reauth(self, text: str, image_path: Optional[str], *, reply_to: Optional[str] = None) -> str:
+        kwargs = {"reply_to": reply_to} if reply_to else {}
         try:
-            return await self.client.post(text, image_path)
+            return await self.client.post(text, image_path, **kwargs)
         except XAuthError as exc:
             if not exc.reauthable:
                 raise
             logger.warning("X oturumu düştü, yeniden deneniyor: %s", exc)
             await self.client.reset_session()
-            return await self.client.post(text, image_path)
+            return await self.client.post(text, image_path, **kwargs)
 
     async def publish_scheduled(self, slot) -> Optional[str]:
         """Yayın diliminde kuyruktaki en uygun onaylı haberi paylaşır."""

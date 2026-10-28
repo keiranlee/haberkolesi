@@ -1,16 +1,26 @@
 # Devosuit Haber Paneli
 
-RSS kaynaklarından güncel teknoloji haberlerini toplayan; planlanan kategorideki adayları tek Gemini çağrısıyla puanlayan ve editör onayına sunulacak Türkçe Devosuit metni ile görsel kartı hazırlayan yönetim paneli.
+RSS kaynaklarından güncel teknoloji haberlerini toplayan; planlanan kategorideki adayları seçili AI sağlayıcısıyla puanlayan ve editör onayına sunulacak sosyal metinler, iki dilli blog ve görsel hazırlayan yönetim paneli.
 
-Resmi X API v2 entegrasyonu mevcuttur; panel üzerinden onaylanan haberler tek tıkla X'te paylaşılabilir veya planlı saat dilimlerinde otomatik olarak gönderilir (görsel kart + 240 karakter metin).
+Varsayılan AI sağlayıcısı **OpenAI (ChatGPT)**'dır. `.env` içine `OPENAI_API_KEY` ekleyin; model varsayılanları `gpt-5.4-mini` ve `gpt-image-2` (low) şeklindedir. Gemini panelden seçilebilen alternatif olarak korunur ve isteğe bağlı `GEMINI_API_KEY` ile etkinleştirilir.
+
+**Gemini / OpenAI seçimi.** Paneldeki AI sağlayıcısı kontrolüyle iki hat arasında geçiş yapılabilir. Varsayılan OpenAI puanlama, üç platform metni, iki dilli blog ve haberle ilgili yazısız görsel hazırlar. [Kurulum, maliyet ve deneme adımları](docs/openai-setup.md).
+
+**Açıklayıcı içerik paketi:** Kazanan haber için X ve Threads ilk gönderileriyle devam metinleri, Instagram açıklaması, web sitesi blog başlığı, arama açıklaması ve ayrıntılı Markdown yazısı hazırlanır. Devam gönderileri bilgi ekler; blog yöntemi, ölçüm koşullarını, karşılaştırmaları ve kaynakta desteklenen sınırları açıklar. Zengin kaynaklarda en az 500 kelime, kısa kaynaklarda daha kısa içerik kullanılır. Blog panelden düzenlenebilir, kopyalanabilir ve indirilebilir. Mevcut üç platformlu taslaklarda Yeniden üret ile yeni alanlar oluşturulur.
+
+Bloglar Türkçe ve İngilizce tam sürümleriyle aynı üretimde hazırlanır. Her dilin başlığı, arama açıklaması ve Markdown yazısı ayrı saklanır, düzenlenir ve indirilir. İngilizce sürüm Türkçenin bilgi kapsamını korur; sosyal gönderiler Türkçe kalır. Eski tek dilli bloglar okunabilir; Yeniden üret iki dilli paketi oluşturur.
+
+Resmi X API v2 entegrasyonu mevcuttur; onaylanan haberler X paylaşımı etkinse görselli ilk gönderi ve bağlı açıklayıcı devamlarıyla paylaşılabilir.
 
 ## Akış
 
 ```text
 Plan saati → yalnız planlanan kategorinin RSS kaynakları → yerel ön eleme
-    → en fazla 3 aday / tek Gemini çağrısı → en iyi güvenli aday
-    → özgün Devosuit metni + 1200×675 kart → panel onayı
+    → en fazla 3 aday / tek AI metin çağrısı → en iyi güvenli aday
+    → sosyal metinler + Türkçe/İngilizce blog + ortak görsel → panel onayı
 ```
+
+OpenAI seçiliyken yalnız kazanan haber için ayrıca bir yazısız görsel isteği yapılır. Metin yeniden üretiminde bu haberin mevcut OpenAI görseli kullanılır.
 
 Kategoriler:
 
@@ -19,7 +29,7 @@ Kategoriler:
 - `Teknoloji`
 - `Yazilim`
 
-İstanbul saatine göre günlük plan `10:00 Girisim`, `12:00 AI`, `14:00 Teknoloji`, `16:00 AI`, `18:00 Yazilim`, `20:00 Girisim` şeklindedir. Her dilimde yalnız ilgili kategori taranır. En fazla üç aday tek Gemini isteğinde puanlanır ve yalnız en yüksek puanlı güvenli aday için metin üretilir. Normal günlük üst sınır altı Gemini çağrısıdır.
+İstanbul saatine göre günlük plan `10:00 Girisim`, `12:00 AI`, `14:00 Teknoloji`, `16:00 AI`, `18:00 Yazilim`, `20:00 Girisim` şeklindedir. Her dilimde yalnız ilgili kategori taranır. En fazla üç aday tek AI metin isteğinde puanlanır; yalnız en yüksek puanlı güvenli aday için içerik hazırlanır. Tekrarlar ve manuel denemeler hariç günlük altı metin isteği, OpenAI ile kazanan bulunursa ayrıca en fazla altı görsel isteği yapılır.
 
 Gemini her adayı `news`, `analysis`, `opinion`, `guide` veya `promotional` olarak sınıflandırır. Reklam içerikleri elenir. X, Threads ve Instagram metinleri, kaynak linkine ihtiyaç duymadan okunabilecek özgün Devosuit haberleri olarak ayrı hazırlanır. “Yazıya göre” gibi özetleme kalıpları kullanılmaz. Sayıların kaynakta bulunması yerel olarak denetlenir; görüş ve tahminlerin kesinleştirilmemesi promptta istenir.
 
@@ -36,7 +46,7 @@ cp .env.example .env
 `.env` içinde en az şu değerleri değiştirin:
 
 ```dotenv
-GEMINI_API_KEY=your_real_key
+OPENAI_API_KEY=your_real_key
 SESSION_SECRET=your_long_random_secret
 ADMIN_PASSWORD=1234
 ```

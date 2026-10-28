@@ -7,6 +7,7 @@ from typing import Callable, Optional
 
 from domain import AiJobType
 from gemini_service import InvalidGeminiResponse, ScoreResult, UnsafeDraftError
+from platform_copy import content_pack
 
 
 logger = logging.getLogger(__name__)
@@ -29,8 +30,10 @@ class AiWorker:
         now: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
         max_attempts: int = 5,
         idle_seconds: float = 2,
+        ai_providers=None,
     ):
         self.repository = repository
+        self.ai_providers = ai_providers
         self.gemini = gemini
         self.worker_id = worker_id
         self.image_service = image_service
@@ -47,22 +50,26 @@ class AiWorker:
         if job is None:
             return False
         try:
+            text_service, image_service = self.gemini, self.image_service
+            if self.ai_providers is not None:
+                provider = await self.ai_providers.snapshot_for_job(job.id)
+                text_service, image_service = provider.text, provider.images
             news = await self.repository.get_news(job.news_id)
             if job.job_type is AiJobType.SCORE:
-                result = await self.gemini.score_news(news.raw)
+                result = await text_service.score_news(news.raw)
                 await self.repository.save_score(news.id, result)
                 if self.auto_generate and result.score >= self.min_score and result.is_publishable:
-                    draft_result = await self.gemini.generate_draft(news.raw, result)
+                    draft_result = await text_service.generate_draft(news.raw, result)
                     await self.repository.save_draft(
                         news.id,
                         draft_result.text,
                         draft_result.used_facts,
                     )
-                    if self.image_service is not None:
+                    if image_service is not None:
                         category = result.category or news.raw.source_category
                         key_fact = result.key_facts[0] if result.key_facts else None
                         image_path = await asyncio.to_thread(
-                            self.image_service.generate_card,
+                            image_service.generate_card,
                             news.id,
                             news.raw.title,
                             category,
@@ -73,17 +80,12 @@ class AiWorker:
                         await self.repository.save_image(news.id, str(image_path))
             else:
                 if not news.key_facts:
-                    score_res = await self.gemini.score_news(news.raw)
+                    score_res = await text_service.score_news(news.raw)
                     await self.repository.save_score(news.id, score_res)
                     news = await self.repository.get_news(news.id)
-                result = await self.gemini.regenerate_content(news)
-                await self.repository.save_draft(
-                    news.id,
-                    result.text,
-                    result.used_facts,
-                    platform_texts={"x": result.text, "threads": getattr(result, "threads_text", None), "instagram": getattr(result, "instagram_text", None)},
-                )
-                if self.image_service is not None:
+                result = await text_service.regenerate_content(news)
+                image_path = None
+                if image_service is not None:
                     category = news.ai_category or news.raw.source_category
                     image_title = getattr(result, "image_title", news.raw.title)
                     image_fact = getattr(
@@ -92,7 +94,7 @@ class AiWorker:
                         result.used_facts[0] if result.used_facts else None,
                     )
                     image_path = await asyncio.to_thread(
-                        self.image_service.generate_card,
+                        image_service.generate_card,
                         news.id,
                         image_title,
                         category,
@@ -100,6 +102,13 @@ class AiWorker:
                         news.raw.published_at,
                         image_fact,
                     )
+                await self.repository.save_draft(
+                    news.id,
+                    result.text,
+                    result.used_facts,
+                    platform_texts=content_pack(result),
+                )
+                if image_path is not None:
                     await self.repository.save_image(news.id, str(image_path))
             await self.repository.complete_job(job.id)
         except RetryableAiError as exc:

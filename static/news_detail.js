@@ -1,6 +1,21 @@
 (function () {
   'use strict';
 
+  document.querySelectorAll('[data-copy-target]').forEach(function (button) {
+    button.addEventListener('click', async function () {
+      const target = document.getElementById(button.dataset.copyTarget);
+      if (!target) return;
+      try {
+        await navigator.clipboard.writeText(target.value || target.textContent);
+        button.textContent = 'Kopyalandı';
+      } catch (error) {
+        target.focus();
+        target.select();
+        button.textContent = 'Metin seçildi · Ctrl/Cmd+C ile kopyala';
+      }
+    });
+  });
+
   const forms = document.querySelectorAll('.regenerate-form, .generate-form, .score-form');
   if (!forms.length) return;
 
@@ -22,12 +37,12 @@
       if (button) {
         button.disabled = true;
         button.innerHTML = isScore
-          ? '<span class="spinner" aria-hidden="true"></span>Gemini puanlıyor…'
+          ? '<span class="spinner" aria-hidden="true"></span>AI puanlıyor…'
           : '<span class="spinner" aria-hidden="true"></span>Yeni metin hazırlanıyor…';
       }
       statusMessage.textContent = isScore
-        ? 'Gemini haber analizi ve puanlamasını yapıyor. Lütfen bekle…'
-        : 'Gemini yeni metni ve Devosuit görselini hazırlıyor. Bu sayfa sonuç hazır olduğunda otomatik güncellenecek.';
+        ? 'Seçili AI haber analizi ve puanlamasını yapıyor. Lütfen bekle…'
+        : 'Sosyal metinler, ayrıntılı blog ve görsel hazırlanıyor. Sonuç hazır olduğunda sayfa otomatik güncellenecek.';
     }
 
     function setFailed(message) {
@@ -39,7 +54,7 @@
     }
 
     async function pollJob(jobId) {
-      for (let attempt = 0; attempt < 90; attempt += 1) {
+      for (let attempt = 0; attempt < 240; attempt += 1) {
         await new Promise((resolve) => window.setTimeout(resolve, 1000));
         const response = await fetch(`/ai-jobs/${jobId}`, {
           headers: { 'X-Requested-With': 'XMLHttpRequest' }

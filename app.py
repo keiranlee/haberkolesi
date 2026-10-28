@@ -9,7 +9,7 @@ from zoneinfo import ZoneInfo
 from typing import Awaitable, Callable, Optional
 
 from fastapi import BackgroundTasks, FastAPI, Form, HTTPException, Request
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
@@ -47,6 +47,7 @@ def create_app(
     rate_gate=None,
     content_runner=None,
     x_publisher=None,
+    ai_providers=None,
     close_callback: Optional[Callable[[], Awaitable[None]]] = None,
 ) -> FastAPI:
     @asynccontextmanager
@@ -159,6 +160,9 @@ def create_app(
             if rate_gate is not None
             else {"last_started_at": None, "next_allowed_at": None}
         )
+        provider_status = await ai_providers.status() if ai_providers is not None else None
+        if provider_status is not None:
+            rate_status = provider_status["rate_status"] or {"last_started_at": None, "next_allowed_at": None}
         return templates.TemplateResponse(
             request=request,
             name="dashboard.html",
@@ -181,8 +185,23 @@ def create_app(
                 "ready_records": ready_records,
                 "state_labels": STATE_LABELS,
                 "unsafe_password": settings.admin_password == "1234",
+                "ai_provider": provider_status,
+                "provider_flash": request.session.pop("provider_flash", None),
             },
         )
+
+    @app.post("/settings/ai-provider")
+    async def select_ai_provider(request: Request, provider: str = Form(...), csrf_token: str = Form("")):
+        require_admin(request)
+        verify_csrf(request, csrf_token)
+        if ai_providers is None:
+            raise HTTPException(status_code=503, detail="AI sağlayıcı seçimi kullanılamıyor")
+        try:
+            await ai_providers.select(provider)
+            request.session["provider_flash"] = "AI sağlayıcısı kaydedildi. Yeni işler bu sağlayıcıyı kullanacak."
+        except ValueError as exc:
+            request.session["provider_flash"] = str(exc)
+        return RedirectResponse("/", status_code=303)
 
     @app.post("/collect")
     async def collect(
@@ -245,6 +264,23 @@ def create_app(
         if not record.image_path or not os.path.exists(record.image_path):
             raise HTTPException(status_code=404, detail="Image not found")
         return FileResponse(record.image_path, media_type="image/png")
+
+    @app.get("/news/{news_id}/blog.md")
+    async def download_blog(request: Request, news_id: int, lang: str = "tr"):
+        require_admin(request)
+        if lang not in {"tr", "en"}:
+            raise HTTPException(status_code=400, detail="Blog dili tr veya en olmalı")
+        try:
+            record = await repository.get_news(news_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="News not found") from exc
+        pack = record.platform_texts or {}
+        suffix = "_en" if lang == "en" else ""
+        if not pack.get("blog_text" + suffix):
+            raise HTTPException(status_code=404, detail="Blog henüz üretilmedi")
+        body = f"# {pack.get('blog_title' + suffix, '')}\n\n{pack.get('blog_text' + suffix, '')}\n"
+        filename = f"haber-{news_id}-en.md" if lang == "en" else f"haber-{news_id}.md"
+        return Response(body, media_type="text/markdown; charset=utf-8", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
     @app.post("/news/{news_id}/prepare")
     async def prepare(
@@ -371,6 +407,14 @@ def create_app(
         edited_text: Optional[str] = Form(None),
         threads_text: Optional[str] = Form(None),
         instagram_text: Optional[str] = Form(None),
+        blog_title: Optional[str] = Form(None),
+        blog_description: Optional[str] = Form(None),
+        blog_text: Optional[str] = Form(None),
+        blog_title_en: Optional[str] = Form(None),
+        blog_description_en: Optional[str] = Form(None),
+        blog_text_en: Optional[str] = Form(None),
+        x_followups: Optional[str] = Form(None),
+        threads_followups: Optional[str] = Form(None),
     ):
         require_admin(request)
         verify_csrf(request, csrf_token)
@@ -378,6 +422,12 @@ def create_app(
             platform_texts = None
             if threads_text is not None or instagram_text is not None:
                 platform_texts = {"x": edited_text, "threads": threads_text, "instagram": instagram_text}
+                existing = (await repository.get_news(news_id)).platform_texts or {}
+                for name, value in (("blog_title", blog_title), ("blog_description", blog_description), ("blog_text", blog_text), ("blog_title_en", blog_title_en), ("blog_description_en", blog_description_en), ("blog_text_en", blog_text_en), ("x_followups", x_followups), ("threads_followups", threads_followups)):
+                    if value is not None:
+                        platform_texts[name] = value
+                    elif name in existing:
+                        platform_texts[name] = existing[name]
             await pipeline.approve_candidate(news_id, edited_text, platform_texts=platform_texts)
         except ValueError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc

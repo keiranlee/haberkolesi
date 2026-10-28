@@ -8,7 +8,7 @@
     </div>
     <div id="live-state" data-batch-state="{{ latest_batch.state if latest_batch else 'none' }}" data-running-jobs="{{ job_counts.running }}" data-pending-jobs="{{ job_counts.pending }}" data-total-records="{{ records|length }}" style="display: none;"></div>
     <h1>Gündemi yakala.<br><em>Doğru haberi seç.</em></h1>
-    <p class="hero-description">Kaynakları tara, Gemini değerlendirmesini anlık izle ve yayına hazır Devosuit metinlerini oluştur.</p>
+    <p class="hero-description">Kaynakları tara, AI değerlendirmesini anlık izle ve yayına hazır Devosuit metinlerini oluştur.</p>
   </div>
   <div class="hero-action-side">
     <form action="/collect" method="post" class="collect-form">
@@ -24,6 +24,25 @@
     </form>
   </div>
 </section>
+
+{% if ai_provider %}
+<section class="surface-card section-block provider-card" aria-labelledby="ai-provider-title">
+  <h2 id="ai-provider-title">AI sağlayıcısı · {{ ai_provider.label }}</h2>
+  <form action="/settings/ai-provider" method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <fieldset class="provider-options" aria-describedby="provider-help">
+      <legend>Puanlama, metin ve görsel üretimi</legend>
+      <label><input type="radio" name="provider" value="gemini" {% if ai_provider.selected == 'gemini' %}checked{% endif %} {% if not ai_provider.gemini_available %}disabled{% endif %}> <span>Gemini</span></label>
+      <label><input type="radio" name="provider" value="openai" {% if ai_provider.selected == 'openai' %}checked{% endif %} {% if not ai_provider.openai_available %}disabled{% endif %}> <span>OpenAI (ChatGPT)</span></label>
+    </fieldset>
+    <p id="provider-help">Seçim yeni işlerde uygulanır; çalışan işler değişmez. OpenAI yazısız görsel üretir ve metin yeniden üretiminde mevcut OpenAI görselini kullanır.</p>
+    {% if not ai_provider.openai_available %}<p>OpenAI hazır değil: .env dosyasına OPENAI_API_KEY ekleyip uygulamayı yeniden başlatın.</p>{% endif %}
+    {% if not ai_provider.gemini_available %}<p>Gemini seçeneğini kullanmak için .env dosyasına GEMINI_API_KEY ekleyip uygulamayı yeniden başlatın.</p>{% endif %}
+    <button class="button button-primary" type="submit">Seçimi kaydet</button>
+    {% if provider_flash %}<p role="status">{{ provider_flash }}</p>{% endif %}
+  </form>
+</section>
+{% endif %}
 
 {% if latest_batch %}
 <section class="collection-status status-{{ latest_batch.state }}" aria-live="polite">
@@ -59,7 +78,7 @@
     <article class="metric-card metric-blue">
       <div class="metric-header">
         <div class="metric-icon"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 2a4 4 0 0 1 4 4v1h1a4 4 0 0 1 4 4v2a4 4 0 0 1-4 4h-1v1a4 4 0 0 1-8 0v-1H7a4 4 0 0 1-4-4v-2a4 4 0 0 1 4-4h1V6a4 4 0 0 1 4-4Zm-2 5h4V6a2 2 0 1 0-4 0v1Zm0 10v1a2 2 0 1 0 4 0v-1h-4Zm-3-8a2 2 0 0 0-2 2v2a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-2a2 2 0 0 0-2-2H7Zm2 2h2v2H9v-2Zm4 0h2v2h-2v-2Z"/></svg></div>
-        <span class="metric-tag">Gemini API</span>
+        <span class="metric-tag">{{ ai_provider.label if ai_provider else 'Gemini' }} API</span>
       </div>
       <div class="metric-body">
         <span class="metric-label">Aktif AI kuyruğu</span>
@@ -93,7 +112,7 @@
         <span class="metric-label">AI hataları</span>
         <strong class="metric-number">{{ stats.failed_jobs }}</strong>
         <div class="metric-footer">
-          <small>{% if stats.failed_jobs %}Gemini erişimini kontrol et{% else %}Sistem normal çalışıyor{% endif %}</small>
+          <small>{% if stats.failed_jobs %}AI erişimini kontrol et{% else %}Sistem normal çalışıyor{% endif %}</small>
         </div>
       </div>
     </article>
@@ -135,7 +154,7 @@
           <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 4V1L8 5l4 4V6a6 6 0 1 1-5.65 4H4.26A8 8 0 1 0 12 4Z"/></svg>
           Sıradaki kategoriyi şimdi test et ({{ next_publishing_slot.category.value }})
         </button>
-        <small>1 Gemini isteği kullanır</small>
+        <small>Seçili AI ile puanlama ve metin üretir; OpenAI seçiliyse ayrıca 1 görsel isteği kullanır.</small>
       </form>
     </div>
     {% endif %}
@@ -145,11 +164,11 @@
     <header class="card-header">
       <div>
         <p class="eyebrow">İş kuyruğu</p>
-        <h2 id="queue-title">Gemini kuyruğu</h2>
+        <h2 id="queue-title">AI kuyruğu</h2>
       </div>
       <span class="rate-badge">Sonraki istek · {% if rate_status.next_allowed_at %}{{ rate_status.next_allowed_at|istanbul_datetime }}{% else %}Hazır{% endif %}</span>
     </header>
-    <p class="card-sub-desc">Google Gemini 3.5 Flash Lite akıllı puanlama ve görsel üretim hattı</p>
+    <p class="card-sub-desc">{{ ai_provider.label if ai_provider else 'Gemini' }} · Puanlama ve içerik üretimi. Doğrulama hatalarında ek istek gerekebilir.</p>
     <div class="queue-stats">
       <div class="queue-stat-item"><span class="queue-dot pending"></span><strong>{{ job_counts.pending }}</strong><small>Bekliyor</small></div>
       <div class="queue-stat-item"><span class="queue-dot running"></span><strong>{{ job_counts.running }}</strong><small>Çalışıyor</small></div>
@@ -262,14 +281,14 @@
               <span class="score-track"><span style="width: {{ record.score * 10 }}%"></span></span>
             </div>
             {% elif active_jobs and active_jobs.get(record.id) == "score" %}
-            <span class="score-in-progress" title="Gemini puanlama analizi yapıyor…">
+            <span class="score-in-progress" title="AI puanlama analizi yapıyor…">
               <span class="spinner" aria-hidden="true" style="width:11px;height:11px;border-width:1.5px;margin-right:4px;"></span>
               Puanlanıyor…
             </span>
             {% else %}
             <form action="/news/{{ record.id }}/score" method="post" class="score-form-inline">
               <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-              <button type="submit" class="button-score-inline" title="Gemini ile Puanla">
+              <button type="submit" class="button-score-inline" title="Seçili AI ile Puanla">
                 <svg aria-hidden="true" viewBox="0 0 24 24"><path d="m12 2 1.5 5.5L19 9l-5.5 1.5L12 16l-1.5-5.5L5 9l5.5-1.5L12 2Z"/></svg>
                 Puanla
               </button>

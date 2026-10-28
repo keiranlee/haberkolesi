@@ -928,6 +928,16 @@ button, input, select, textarea {
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
 }
 
+.provider-options { border: 0; padding: 0; margin: 16px 0; display: flex; flex-wrap: wrap; gap: 12px; }
+.provider-options legend { margin-bottom: 12px; color: var(--text-muted); }
+.provider-options label { display: inline-flex; align-items: center; gap: 10px; min-height: 44px; padding: 12px 18px; background: var(--bg-card-elevated); border: 1px solid var(--border-strong); border-radius: var(--radius-btn); cursor: pointer; }
+.provider-options input { width: 18px; height: 18px; margin: 0; accent-color: var(--lime); }
+.provider-options input:checked + span { color: var(--lime); font-weight: 700; }
+.provider-options input:disabled + span { color: var(--text-muted); }
+.provider-options label:focus-within { outline: 2px solid var(--lime); outline-offset: 3px; }
+.provider-card p { color: var(--text-muted); max-width: 85ch; }
+.provider-card [role="status"] { color: var(--text); }
+
 .card-header {
   display: flex;
   justify-content: space-between;
@@ -2386,5 +2396,4 @@ textarea#edited_text:focus {
   border-right-color: transparent;
   flex-shrink: 0;
 }
-
 

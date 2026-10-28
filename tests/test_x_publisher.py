@@ -77,6 +77,32 @@ def test_official_x_client_configuration():
 
 
 @pytest.mark.asyncio
+async def test_x_thread_resumes_after_failed_reply_without_reposting_root():
+    repo = MemoryRepository()
+    news = await repo.insert_news(1, make_raw_news())
+    await repo.save_draft(news.id, "İlk gönderi", [], platform_texts={"x": "İlk gönderi", "x_followups": "Yöntemin açıklaması.\n\nSonuç ve sınırları."})
+    await repo.approve(news.id)
+    class Client:
+        def __init__(self):
+            self.calls = []
+            self.failed = False
+        async def post(self, text, image_path=None, *, reply_to=None):
+            self.calls.append((text, reply_to))
+            if text == "Yöntemin açıklaması." and not self.failed:
+                self.failed = True
+                raise XPublishError("Temporary failure")
+            return {"İlk gönderi": "root", "Yöntemin açıklaması.": "second", "Sonuç ve sınırları.": "third"}[text]
+    client = Client()
+    publisher = XPublisher(repo, client)
+    with pytest.raises(XPublishError):
+        await publisher.publish_news(news.id)
+    assert (await repo.get_news(news.id)).x_thread_post_ids == ["root"]
+    assert await publisher.publish_news(news.id) == "root"
+    assert client.calls == [("İlk gönderi", None), ("Yöntemin açıklaması.", "root"), ("Yöntemin açıklaması.", "root"), ("Sonuç ve sınırları.", "second")]
+    assert (await repo.get_news(news.id)).x_thread_post_ids == ["root", "second", "third"]
+
+
+@pytest.mark.asyncio
 async def test_x_publisher_publishes_approved_news():
     repo = MemoryRepository()
     record = await repo.insert_news(1, make_raw_news())
