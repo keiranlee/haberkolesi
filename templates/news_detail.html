@@ -1,6 +1,19 @@
 {% extends "base.html" %}
 {% block title %}{{ record.raw.title }} · Devosuit Newsroom{% endblock %}
 {% block content %}
+{% if publication_available %}
+<section class="surface-card section-block">
+  <h2>Blog ve sosyal yayın</h2>
+  {% if publication_job and publication_job.payload.blog %}
+  <p>Bu haberin yayın paketi kaydedildi. <a href="/">Ana panelden kanal durumlarını izleyin.</a> Yeniden deneme aynı paketi kullanır.</p>
+  {% elif record.state.value == 'approved' %}
+  <form action="/news/{{ record.id }}/publish" method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button class="button button-primary" type="submit">Blog ve açık sosyal kanallarda yayınla</button>
+  </form>
+  {% else %}<p>Planlı saatlerde uygun içerik otomatik yayınlanır. Elle yayınlamak için önce içeriği onaylayın.</p>{% endif %}
+</section>
+{% endif %}
 <nav class="breadcrumb" aria-label="İçerik yolu">
   <a href="/">Haber havuzu</a><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6 1.41-1.41L17.83 12l-7.42 7.41L9 18Z"/></svg><span>Haber #{{ record.id }}</span>
 </nav>
@@ -88,7 +101,7 @@
     <div class="publish-state">
       {% if record.x_published_at %}
       <span class="status-dot"></span>X'te paylaşıldı
-      {% elif x_enabled %}
+      {% elif x_enabled and not publication_available %}
       <span class="status-dot"></span>X yayını hazır
       {% else %}
       <span class="status-dot is-muted"></span>X yayını kapalı
@@ -194,7 +207,7 @@
         </a>
         {% endif %}
       </div>
-      {% elif x_enabled %}
+      {% elif x_enabled and not publication_available %}
       <div style="margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border);">
         <form action="/news/{{ record.id }}/publish-x" method="post" style="display: inline-block;">
           <input type="hidden" name="csrf_token" value="{{ csrf_token }}">

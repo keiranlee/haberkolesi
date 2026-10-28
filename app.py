@@ -48,6 +48,7 @@ def create_app(
     content_runner=None,
     x_publisher=None,
     ai_providers=None,
+    publication_service=None,
     close_callback: Optional[Callable[[], Awaitable[None]]] = None,
 ) -> FastAPI:
     @asynccontextmanager
@@ -181,14 +182,67 @@ def create_app(
                 "latest_batch": latest_batch,
                 "publishing_slots": PUBLISHING_SLOTS,
                 "next_publishing_slot": next_publishing_slot,
+                "current_istanbul_date": datetime.now(ISTANBUL_TIMEZONE).strftime('%d.%m.%Y'),
                 "run_states": run_states,
                 "ready_records": ready_records,
                 "state_labels": STATE_LABELS,
                 "unsafe_password": settings.admin_password == "1234",
                 "ai_provider": provider_status,
                 "provider_flash": request.session.pop("provider_flash", None),
+                "publication": await publication_service.status() if publication_service else None,
+                "publication_flash": request.session.pop("publication_flash", None),
             },
         )
+
+    @app.post("/settings/auto-publish")
+    async def toggle_auto_publish(request: Request, enabled: str = Form("false"), csrf_token: str = Form("")):
+        require_admin(request)
+        verify_csrf(request, csrf_token)
+        if publication_service is None:
+            raise HTTPException(503, "Yayın servisi kullanılamıyor")
+        if enabled not in ('true', 'false'):
+            raise HTTPException(400, "Geçersiz ayar")
+        problems = publication_service.problems() if enabled == 'true' else []
+        if problems:
+            request.session['publication_flash'] = ' '.join(problems)
+        else:
+            await publication_service.store.set_enabled(enabled == 'true')
+            request.session['publication_flash'] = 'Otomatik yayın panel ayarı kaydedildi.'
+        return RedirectResponse('/', status_code=303)
+
+    @app.post("/news/{news_id}/publish")
+    async def publish_all(request: Request, news_id: int, csrf_token: str = Form("")):
+        require_admin(request)
+        verify_csrf(request, csrf_token)
+        if publication_service is None:
+            raise HTTPException(503, "Yayın servisi kullanılamıyor")
+        try:
+            async with publication_service.store.lock() as acquired:
+                if not acquired:
+                    raise ValueError('Yayın sürüyor; biraz sonra tekrar deneyin')
+                await publication_service.enqueue(news_id)
+            request.session['flash'] = {'kind': 'success', 'message': 'Blog ve açık sosyal kanallar yayın kuyruğuna alındı.'}
+        except KeyError:
+            raise HTTPException(404, 'Haber bulunamadı') from None
+        except (ValueError, OSError) as exc:
+            request.session['flash'] = {'kind': 'error', 'message': str(exc)}
+        return RedirectResponse(f'/news/{news_id}', status_code=303)
+
+    @app.post("/publications/{news_id}/retry")
+    async def retry_publication(request: Request, news_id: int, channel: str = Form(...),
+                                post_id: str = Form(""), confirmed_not_posted: bool = Form(False),
+                                csrf_token: str = Form("")):
+        require_admin(request)
+        verify_csrf(request, csrf_token)
+        if publication_service is None:
+            raise HTTPException(503, "Yayın servisi kullanılamıyor")
+        try:
+            await publication_service.retry(news_id, channel, post_id=post_id.strip(),
+                                            confirmed_not_posted=confirmed_not_posted)
+            request.session['publication_flash'] = 'Yayın durumu kaydedildi; açık otomatik işler sırayla devam edecek.'
+        except ValueError as exc:
+            request.session['publication_flash'] = str(exc)
+        return RedirectResponse('/', status_code=303)
 
     @app.post("/settings/ai-provider")
     async def select_ai_provider(request: Request, provider: str = Form(...), csrf_token: str = Form("")):
@@ -251,6 +305,8 @@ def create_app(
                 "state_labels": STATE_LABELS,
                 "unsafe_password": settings.admin_password == "1234",
                 "x_enabled": x_publisher is not None,
+                "publication_available": publication_service is not None,
+                "publication_job": await publication_service.store.get(news_id) if publication_service else None,
                 "flash": request.session.pop("flash", None),
             },
         )
@@ -457,6 +513,8 @@ def create_app(
     ):
         require_admin(request)
         verify_csrf(request, csrf_token)
+        if publication_service is not None:
+            return await publish_all(request, news_id, csrf_token)
         if x_publisher is None:
             raise HTTPException(status_code=503, detail="X paylaşımı yapılandırılmamış")
         from x_publisher import XPublishError

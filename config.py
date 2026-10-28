@@ -266,6 +266,13 @@ class Settings:
     x_totp_secret: str = ""
     x_proxy: str = ""
     x_daily_limit: int = 8
+    auto_publish: bool = False
+    devosuit_api_url: str = ""
+    devosuit_site_url: str = "https://devosuit.com"
+    devosuit_publish_token: str = ""
+    threads_enabled: bool = False
+    threads_user_id: str = ""
+    threads_access_token: str = ""
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -315,6 +322,13 @@ class Settings:
             x_totp_secret=os.getenv("X_TOTP_SECRET", "").strip(),
             x_proxy=os.getenv("X_PROXY", "").strip(),
             x_daily_limit=x_daily_limit,
+            auto_publish=_environment_bool("AUTO_PUBLISH"),
+            devosuit_api_url=os.getenv("DEVOSUIT_API_URL", "").strip().rstrip('/'),
+            devosuit_site_url=os.getenv("DEVOSUIT_SITE_URL", "https://devosuit.com").strip().rstrip('/'),
+            devosuit_publish_token=os.getenv("DEVOSUIT_PUBLISH_TOKEN", "").strip(),
+            threads_enabled=_environment_bool("THREADS_ENABLED"),
+            threads_user_id=os.getenv("THREADS_USER_ID", "").strip(),
+            threads_access_token=os.getenv("THREADS_ACCESS_TOKEN", "").strip(),
         )
 
 

@@ -1,10 +1,58 @@
 {% extends "base.html" %}
 {% block content %}
+{% if publication %}
+<section class="surface-card section-block" aria-labelledby="publication-title">
+  <h2 id="publication-title">Otomatik yayın · {{ 'Açık' if publication.enabled else 'Kapalı' }}</h2>
+  <p>İstanbul: {% for slot in publishing_slots %}{{ '%02d:00'|format(slot.hour) }} {{ slot.category.value }}{% if not loop.last %} · {% endif %}{% endfor %}.</p>
+  <p>Planlı saatte içerik hazırlanır; kontrolleri geçince blog, ardından görselli kısa özet ve blog bağlantısıyla X/Threads yayınlanır. Hazırlama süresi nedeniyle paylaşım birkaç dakika sonra gerçekleşebilir. Manuel test paylaşım yapmaz.</p>
+  <p>X: {{ 'Açık' if publication.x_enabled else 'Kapalı' }} · Threads: {{ 'Açık' if publication.threads_enabled else 'Kapalı' }}</p>
+  {% if not publication.env_enabled %}<p>Coolify ortamında AUTO_PUBLISH=false. Otomatik yayın için true yapıp yeniden deploy edin; panel anahtarı da açık olmalı.</p>{% endif %}
+  {% for problem in publication.problems %}<p role="alert">{{ problem }}</p>{% endfor %}
+  <form action="/settings/auto-publish" method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="enabled" value="{{ 'false' if publication.panel_enabled else 'true' }}">
+    <button class="button button-secondary" type="submit">{{ 'Otomatik yayını duraklat' if publication.panel_enabled else 'Otomatik yayını aç' }}</button>
+    <small>Panel seçimi kalıcıdır. Duraklatma yeni aşamaları durdurur; gönderilmiş bir isteği geri almaz. Manuel yayın ayrı çalışır.</small>
+  </form>
+  {% if publication_flash %}<p role="status">{{ publication_flash }}</p>{% endif %}
+</section>
+{% if publication.jobs %}
+<section class="surface-card section-block" aria-labelledby="publication-jobs-title">
+  <h2 id="publication-jobs-title">Son yayınlar</h2>
+  {% for job in publication.jobs %}
+  <details style="padding:12px 0;border-bottom:1px solid var(--border)">
+    <summary>Haber #{{ job.news_id }} · {{ publication.labels.get(job.state, job.state) }} · {{ job.updated_at|istanbul_datetime }}</summary>
+    <p><a href="/news/{{ job.news_id }}">Haberi incele</a> · {{ 'Otomatik' if job.payload.automatic else 'Manuel' }}</p>
+    {% for channel, stage in job.progress.items() %}
+    <div style="margin:12px 0">
+      <strong>{{ channel|upper }}: {{ publication.labels.get(stage.state, stage.state) }}</strong>
+      {% if stage.error %}<p>{{ stage.error }}</p>{% endif %}
+      {% if channel == 'blog' and stage.result %}<a href="{{ stage.result.url }}" target="_blank" rel="noopener noreferrer">Blogu aç</a>{% endif %}
+      {% if channel == 'x' and stage.id %}<a href="https://x.com/i/status/{{ stage.id }}" target="_blank" rel="noopener noreferrer">X gönderisini aç</a>{% elif stage.id %}<p>Gönderi kimliği: {{ stage.id }}</p>{% endif %}
+      {% if stage.state in ['failed', 'retry', 'uncertain'] and job.payload.blog %}
+      <form action="/publications/{{ job.news_id }}/retry" method="post">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="channel" value="{{ channel }}">
+        {% if stage.state == 'uncertain' %}
+        <p>Önce hesabı kontrol edin. Yayınlanmışsa sayısal gönderi kimliğini girin; tekrar gönderilmez.</p>
+        <label>Gönderi kimliği <input name="post_id" inputmode="numeric" pattern="[0-9]{1,30}" maxlength="30"></label>
+        <label><input type="checkbox" name="confirmed_not_posted" value="true"> Hesabı kontrol ettim, bu gönderi yayınlanmamış; yeniden denensin.</label>
+        {% endif %}
+        <button class="button button-secondary button-sm" type="submit">{{ 'Sonucu kaydet' if stage.state == 'uncertain' else 'Bu kanalı yeniden dene' }}</button>
+      </form>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </details>
+  {% endfor %}
+</section>
+{% endif %}
+{% endif %}
 <section id="overview" class="dashboard-hero">
   <div class="hero-text-side">
     <div class="hero-badge-row">
       <span class="eyebrow"><span class="live-dot" aria-hidden="true"></span>Canlı · Editör masası</span>
-      <span class="hero-date">9 Eylül 2026</span>
+      <span class="hero-date">{{ current_istanbul_date }}</span>
     </div>
     <div id="live-state" data-batch-state="{{ latest_batch.state if latest_batch else 'none' }}" data-running-jobs="{{ job_counts.running }}" data-pending-jobs="{{ job_counts.pending }}" data-total-records="{{ records|length }}" style="display: none;"></div>
     <h1>Gündemi yakala.<br><em>Doğru haberi seç.</em></h1>

@@ -1,5 +1,25 @@
 # Devosuit Haber Paneli
 
+## Otomatik blog, X ve Threads yayını
+
+Planlı saatte seçilen güvenli haber, `AUTO_PUBLISH=true` ve panel anahtarı açıkken
+editör beklemeden önce Devosuit blogunda, ardından açık X/Threads kanallarında
+yayınlanır. Sosyal gönderiler **görsel + kısa Türkçe özet + gerçek blog linki**
+içerir. Instagram yayın entegrasyonu yoktur. Eski içerik alanları okunabilir kalır.
+
+Mevcut altı saatlik kategori çizelgesi korunur; manuel test işlemi paylaşım yapmaz.
+Yeni akış birer sosyal gönderi yayınlar; oluşturulan devam metinleri gönderilmez.
+Blog ve kanal sonuçları PostgreSQL'de ayrı saklanır. Tekrar denemeler başarılı
+kanalları tekrarlamaz; belirsiz gönderim sonuçları panelde kontrol ister.
+
+**Coolify kurulumu, Devosuit backend migration'ı, servis anahtarı ve Threads hesap
+bağlantısı:** [Otomatik yayın rehberi](docs/automatic-publishing-coolify.md).
+
+`X_AUTO_PUBLISH` yalnız otomatik işlerde X kanalının seçimini belirler. Genel
+anahtar `AUTO_PUBLISH` ve kalıcı panel anahtarıdır. `THREADS_ENABLED` Threads
+kanalını açar. Önce backend'i deploy edin; sonra erişim bilgilerini Coolify'a
+girip otomatik yayını açın. `/app/data` ve PostgreSQL kalıcı olmalıdır.
+
 RSS kaynaklarından güncel teknoloji haberlerini toplayan; planlanan kategorideki adayları seçili AI sağlayıcısıyla puanlayan ve editör onayına sunulacak sosyal metinler, iki dilli blog ve görsel hazırlayan yönetim paneli.
 
 Varsayılan AI sağlayıcısı **OpenAI (ChatGPT)**'dır. `.env` içine `OPENAI_API_KEY` ekleyin; model varsayılanları `gpt-5.4-mini` ve `gpt-image-2` (low) şeklindedir. Gemini panelden seçilebilen alternatif olarak korunur ve isteğe bağlı `GEMINI_API_KEY` ile etkinleştirilir.

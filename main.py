@@ -26,6 +26,9 @@ from schedule import PUBLISHING_SLOTS
 from scheduled_content import ScheduledContentRunner
 from worker import AiWorker
 from x_publisher import OfficialXClient, TwikitXClient, XPublisher
+from publication_store import PublicationStore
+from publication_clients import BlogClient, ThreadsClient
+from publication_service import PublicationService
 
 
 logger = logging.getLogger("haberkolesi.main")
@@ -34,13 +37,14 @@ logger = logging.getLogger("haberkolesi.main")
 def create_scheduler(
     runner: ScheduledContentRunner,
     x_publisher: Optional[XPublisher] = None,
+    publication_service=None,
 ) -> AsyncIOScheduler:
     scheduler = AsyncIOScheduler(timezone=TIMEZONE)
     for slot in PUBLISHING_SLOTS:
         scheduler.add_job(
-            runner.run_slot,
+            publication_service.run_slot if publication_service else runner.run_slot,
             trigger=CronTrigger(hour=slot.hour, minute=0, timezone=TIMEZONE),
-            args=[slot],
+            args=[runner, slot] if publication_service else [slot],
             id=f"content_{slot.hour:02d}_{slot.category.value.lower()}",
             name=f"{slot.hour:02d}:00 {slot.category.value} içerik hazırlığı",
             max_instances=1,
@@ -48,7 +52,7 @@ def create_scheduler(
             misfire_grace_time=300,
             replace_existing=True,
         )
-        if x_publisher is not None:
+        if x_publisher is not None and publication_service is None:
             scheduler.add_job(
                 x_publisher.publish_scheduled,
                 trigger=CronTrigger(hour=slot.hour, minute=0, timezone=TIMEZONE),
@@ -60,6 +64,10 @@ def create_scheduler(
                 misfire_grace_time=600,
                 replace_existing=True,
             )
+    if publication_service is not None:
+        scheduler.add_job(publication_service.tick, 'interval', seconds=60,
+                          id='publication_queue', max_instances=1, coalesce=True,
+                          next_run_time=datetime.now(timezone.utc))
     return scheduler
 
 
@@ -172,12 +180,26 @@ async def build_app():
         ai_providers=ai_providers,
     )
     x_publisher = build_x_publisher(settings, repository)
+    publication_store = PublicationStore(pool)
+    await publication_store.initialize()
+    blog = None
+    if settings.devosuit_api_url and settings.devosuit_publish_token:
+        blog = BlogClient(settings.devosuit_api_url, settings.devosuit_publish_token, settings.devosuit_site_url)
+    threads = None
+    if settings.threads_enabled and settings.threads_user_id and settings.threads_access_token:
+        threads = ThreadsClient(settings.threads_access_token, settings.threads_user_id, publication_store)
+    publication_service = PublicationService(settings, repository, publication_store, blog,
+                                             x_publisher.client if x_publisher else None, threads)
     scheduler = create_scheduler(
         content_runner,
-        x_publisher if settings.x_auto_publish else None,
+        publication_service=publication_service,
     )
 
     async def close_resources():
+        if blog is not None:
+            await blog.close()
+        if threads is not None:
+            await threads.close()
         if gemini is not None:
             await gemini.close()
         if openai_text is not None:
@@ -197,6 +219,7 @@ async def build_app():
         content_runner=content_runner,
         x_publisher=x_publisher,
         ai_providers=ai_providers,
+        publication_service=publication_service,
         close_callback=close_resources,
     )
 
